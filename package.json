@@ -5,6 +5,8 @@
   "type": "module",
   "description": "LinhSinhVN - Headless Deterministic Genetics Engine",
   "scripts": {
+    "test": "node --test tests/genetics/*.test.js",
+    "test:genetics": "node --test tests/genetics/*.test.js",
     "smoke": "node tools/smoke_check_genetics.js"
   }
 }
