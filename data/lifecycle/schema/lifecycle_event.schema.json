@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/lifecycle/lifecycle_event.schema.json",
+  "title": "LifecycleEvent",
+  "description": "Immutable simulation event emitted by the life cycle engine to the deterministic event stream",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "organism_id",
+    "simulation_tick",
+    "event_type",
+    "stage_id",
+    "deterministic_order_index",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "organism_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Simulation tick at which the event occurred"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "ORGANISM_BORN",
+        "STAGE_ENTERED",
+        "STAGE_TRANSITIONED",
+        "FEEDING",
+        "NUTRITION_DEFICIT",
+        "GROWTH_UPDATED",
+        "MOLT_STARTED",
+        "MOLT_COMPLETED",
+        "MOLT_FAILED",
+        "DEVELOPMENTAL_STRESS_CHANGED",
+        "DEVELOPMENTAL_REALIZATION_CHANGED",
+        "STARVATION_STARTED",
+        "STARVATION_ENDED",
+        "INJURY_RECEIVED",
+        "DEATH"
+      ]
+    },
+    "stage_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_]+$"
+    },
+    "substage_id": {
+      "type": ["string", "null"]
+    },
+    "deterministic_order_index": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonically increasing sequence index within the tick ensuring canonical event ordering"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Event-specific key-value payload containing serializable scalars"
+    }
+  },
+  "additionalProperties": false
+}

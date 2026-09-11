@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/lifecycle/death_record.schema.json",
+  "title": "DeathRecord",
+  "description": "Immutable terminal mortality archive record for deceased organisms",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "organism_id",
+    "species_id",
+    "death_tick",
+    "chronological_age_ticks",
+    "death_stage",
+    "primary_cause",
+    "detailed_cause_narrative",
+    "terminal_eta",
+    "terminal_biomass",
+    "terminal_stored_energy",
+    "terminal_stress_index",
+    "parent_ids"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "organism_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "species_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "death_tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Global simulation tick at which mortality occurred"
+    },
+    "chronological_age_ticks": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total lifespan ticks survived from egg fertilization to death"
+    },
+    "death_stage": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_]+$",
+      "description": "Lifecycle stage at the moment of death"
+    },
+    "death_substage": {
+      "type": ["string", "null"],
+      "description": "Substage/instar at death, if applicable"
+    },
+    "primary_cause": {
+      "type": "string",
+      "enum": [
+        "STARVATION",
+        "DEVELOPMENTAL_FAILURE",
+        "ENVIRONMENTAL_FAILURE",
+        "OLD_AGE",
+        "CATASTROPHIC_EVENT"
+      ],
+      "description": "Authoritative high-level category of mortality"
+    },
+    "detailed_cause_narrative": {
+      "type": "string",
+      "description": "Descriptive diagnostic explanation of the fatal biological mechanism"
+    },
+    "terminal_eta": {
+      "type": "number",
+      "minimum": 0.60,
+      "maximum": 1.00,
+      "description": "Realized developmental factor at the moment of death"
+    },
+    "terminal_biomass": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Remaining structural tissue mass at death"
+    },
+    "terminal_stored_energy": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Remaining energy reserve at death"
+    },
+    "terminal_stress_index": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Total acute/chronic stress experienced at time of death"
+    },
+    "parent_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Identifier references to parental lineage"
+    }
+  },
+  "additionalProperties": false
+}

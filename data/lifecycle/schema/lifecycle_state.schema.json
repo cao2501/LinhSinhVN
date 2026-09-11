@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/lifecycle/lifecycle_state.schema.json",
+  "title": "LifecycleState",
+  "description": "Complete authoritative persisted state of an organism across lifecycle simulation ticks",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "organism_id",
+    "species_id",
+    "simulation_tick",
+    "simulation_seed",
+    "chronological_age_ticks",
+    "stage_age_ticks",
+    "is_alive",
+    "status",
+    "current_stage_id",
+    "current_substage_id",
+    "developmental_state",
+    "nutrition_state",
+    "environment_state",
+    "stress_state",
+    "physiological_modifiers",
+    "death_record"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "organism_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "species_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Global discrete simulation clock tick"
+    },
+    "simulation_seed": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]{16}$",
+      "description": "64-bit deterministic hexadecimal seed assigned at birth"
+    },
+    "chronological_age_ticks": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total lifetime simulation ticks elapsed since oviposition"
+    },
+    "stage_age_ticks": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Ticks spent continuously within the current lifecycle stage"
+    },
+    "is_alive": {
+      "type": "boolean",
+      "description": "Whether the organism is currently living and executing lifecycle ticks"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ALIVE", "DEAD"],
+      "description": "Authoritative lifecourse status"
+    },
+    "current_stage_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_]+$",
+      "description": "Active lifecycle stage (e.g., STAGE_EGG, STAGE_LARVA, STAGE_PUPA, STAGE_ADULT)"
+    },
+    "current_substage_id": {
+      "type": ["string", "null"],
+      "description": "Active substage/instar identifier if configured by species profile"
+    },
+    "developmental_state": {
+      "type": "object",
+      "description": "Nested developmental realization state (eta, progress, locking status)"
+    },
+    "nutrition_state": {
+      "type": "object",
+      "description": "Nested physiological reserves (energy, structural biomass, hydration, starvation)"
+    },
+    "environment_state": {
+      "type": "object",
+      "description": "Deterministic snapshot of local ambient conditions for the current tick"
+    },
+    "stress_state": {
+      "type": "object",
+      "description": "Multi-factorial acute and chronic physiological stress metrics"
+    },
+    "physiological_modifiers": {
+      "type": "object",
+      "required": [
+        "senescence_metabolic_modifier",
+        "active_stamina",
+        "current_hp"
+      ],
+      "properties": {
+        "senescence_metabolic_modifier": {
+          "type": "number",
+          "minimum": 1.00,
+          "description": "Physiological age multiplier elevating metabolic demand in elder adults"
+        },
+        "active_stamina": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Immediate stamina reserve available for action execution"
+        },
+        "current_hp": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Current physiological vitality / structural integrity"
+        }
+      },
+      "additionalProperties": false
+    },
+    "death_record": {
+      "type": ["object", "null"],
+      "description": "Terminal immutable death record sealed when status is DEAD; null while ALIVE"
+    }
+  },
+  "additionalProperties": false
+}

@@ -48,51 +48,65 @@ The system architecture enforces a strict unidirectional dependency hierarchy. H
 ## 2. Domain Breakdown
 
 ### 2.1 DATA
-- **Responsibility:** Static configuration, species schemas, genetic allele libraries, environmental thresholds, item profiles, and localization keys.
-- **Form:** Structured files (JSON/YAML or Godot Resources) located in `/data`.
+- **Responsibility:** Static configuration, species profiles, genetic loci registries, lifecycle stage definitions, environmental thresholds, and localization keys.
+- **Form:** Structured files (JSON/YAML) located under `/data`.
 - **Dependencies:** None.
 
 ### 2.2 CORE
-- **Responsibility:** Deterministic pseudo-random number generation (seeded PRNG), simulation ticks, global event bus, math primitives, and system clocks.
+- **Responsibility:** Deterministic pseudo-random number generation (seeded PRNG), simulation ticks, canonical event stream bus, math primitives, and system clocks.
 - **Dependencies:** DATA.
 
-### 2.3 CREATURE
-- **Responsibility:** Aggregate creature identity, biological lifecycle stage (egg, larva/nymph, adult, elder), health/vitality status, and entity lifecycle.
+### 2.3 GENETICS
+- **Responsibility:** Headless genome representation, diploid chromosome pairs, allele segregation, independent assortment, and bounded mutation.
+- **Dependencies:** CORE, DATA.
+- **Boundary Invariant:** GENETICS has ZERO dependency on development, survival, environment, presentation, or UI. The genome is strictly immutable across an organism's lifespan.
+
+### 2.4 CREATURE / LIFE CYCLE
+- **Responsibility:** Aggregate creature identity, generic lifecycle stage state machine (e.g., Egg, Larva, Pupa, Adult), substages/instars, molting/ecdysis resolution, chronological aging, and terminal mortality.
 - **Dependencies:** CORE, DATA.
 
-### 2.4 GENETICS
-- **Responsibility:** Genome representation, chromosome pairs, allele segregation, genetic crossover, mutation rates, and inheritance calculation.
+### 2.5 DEVELOPMENT
+- **Responsibility:** Tracking larval developmental plasticity, nutritional deficit accumulation, compensatory recovery, and the Developmental Realization Factor ($\eta \in [0.60, 1.00]$). Manages the irreversible morphological locking event at metamorphosis.
+- **Dependencies:** CREATURE / LIFE CYCLE, CORE, DATA.
+
+### 2.6 PHENOTYPE
+- **Responsibility:** Pure function translation of expressed genetic alleles combined with the locked developmental realization factor ($\eta_{\text{locked}}$) into realized adult anatomical scales (body scale, mass, horns, claws) and base derived gameplay stats.
+- **Dependencies:** GENETICS, DEVELOPMENT, DATA.
+
+### 2.7 SURVIVAL / PHYSIOLOGY
+- **Responsibility:** Tick-by-tick metabolic simulation: dynamic stored energy, biomass catabolism, hydration, thermal regulation, acute/chronic stress accumulation, starvation state machine, and physiological senescence modifiers (`senescence_metabolic_modifier`).
+- **Dependencies:** CREATURE / LIFE CYCLE, PHENOTYPE, CORE, DATA.
+
+### 2.8 ENVIRONMENT
+- **Responsibility:** Deterministic per-tick environment snapshots (`EnvironmentState`): ambient temperature, humidity, substrate quality, food density, and crowding index.
 - **Dependencies:** CORE, DATA.
 
-### 2.5 PHENOTYPE
-- **Responsibility:** Translation of expressed genetic alleles into concrete biological attributes: morphological scales, anatomical features, base stats (speed, defense, venom, vision).
-- **Dependencies:** GENETICS, DATA.
+### 2.9 EVENT STREAM
+- **Responsibility:** Strict, ordered append-only sequence of immutable simulation events emitted by the Life Cycle and Survival engines.
+- **Dependencies:** CORE.
+- **Boundary Invariant:** The event stream is consumed by presentation, UI, dialogue, and fourth-wall subsystems strictly as passive, read-only observers.
 
-### 2.6 EVOLUTION
+### 2.10 EVOLUTION
 - **Responsibility:** Tracking lineage generational history, speciation thresholds, adaptation metrics, and deep-time phylogenetic tree recording.
-- **Dependencies:** GENETICS, PHENOTYPE, CREATURE.
+- **Dependencies:** GENETICS, PHENOTYPE, CREATURE / LIFE CYCLE.
 
-### 2.7 WORLD
+### 2.11 WORLD
 - **Responsibility:** Spatial map representation, micro-habitats, obstacles, terrain passability, foraging nodes, and shelter locations.
 - **Dependencies:** CORE, DATA.
 
-### 2.8 ECOSYSTEM
+### 2.12 ECOSYSTEM
 - **Responsibility:** Population dynamics, predator-prey food chains, seasonal shifts, local resource regeneration, and environmental carrying capacity.
-- **Dependencies:** WORLD, CREATURE, CORE.
+- **Dependencies:** WORLD, CREATURE / LIFE CYCLE, CORE.
 
-### 2.9 SURVIVAL
-- **Responsibility:** Immediate metabolic simulation: hunger, hydration, body temperature, stamina, oxygen, toxins, and environmental hazards.
-- **Dependencies:** CREATURE, PHENOTYPE, WORLD.
+### 2.13 COMBAT
+- **Responsibility:** Resolution of physical predation, defense clashes, horn prying leverage, traction slip, and retreat mechanics.
+- **Dependencies:** CREATURE / LIFE CYCLE, PHENOTYPE, SURVIVAL / PHYSIOLOGY, CORE.
 
-### 2.10 COMBAT
-- **Responsibility:** Resolution of physical predation, defense clashes, venom injection, territorial disputes, and retreat mechanics.
-- **Dependencies:** CREATURE, PHENOTYPE, SURVIVAL, CORE.
-
-### 2.11 DIALOGUE
+### 2.14 DIALOGUE
 - **Responsibility:** Delivery of spoken lines, text rendering, localized text feeds, and procedural line selection.
-- **Dependencies:** CORE (Event Bus).
+- **Dependencies:** EVENT STREAM (Read-only).
 
-### 2.12 FOURTH-WALL
+### 2.15 FOURTH-WALL
 - **Responsibility:** Monitoring player inputs, repeated mistakes, session length, and death streaks; injecting protagonist self-awareness commentary into the DIALOGUE layer.
 - **Dependencies:** DIALOGUE, CREATURE, CORE (Event Bus).
 

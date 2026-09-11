@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/lifecycle/environment_state.schema.json",
+  "title": "EnvironmentState",
+  "description": "Deterministic serializable snapshot of micro-habitat conditions applied during a simulation tick",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "ambient_temperature_celsius",
+    "relative_humidity",
+    "substrate_moisture",
+    "substrate_organic_richness",
+    "food_density",
+    "shelter_security_factor",
+    "population_crowding_index",
+    "environmental_hazard_rating"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "ambient_temperature_celsius": {
+      "type": "number",
+      "minimum": -20.0,
+      "maximum": 60.0,
+      "description": "Local microclimate temperature in degrees Celsius"
+    },
+    "relative_humidity": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Normalized atmospheric relative humidity"
+    },
+    "substrate_moisture": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Moisture content of decaying wood or soil substrate"
+    },
+    "substrate_organic_richness": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Nutritional and fungal/bacterial richness of the foraging medium"
+    },
+    "food_density": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Spatial availability of edible resources within foraging reach"
+    },
+    "shelter_security_factor": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Protection index from predation and external physical disturbances"
+    },
+    "population_crowding_index": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Conspecific density factor generating competition and interference"
+    },
+    "environmental_hazard_rating": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Severity of ambient environmental toxins, flooding, or mold infestation"
+    }
+  },
+  "additionalProperties": false
+}

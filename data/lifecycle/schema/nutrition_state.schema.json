@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/lifecycle/nutrition_state.schema.json",
+  "title": "NutritionState",
+  "description": "Dynamic physiological energy, biomass, hydration, and starvation status",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "organism_id",
+    "stored_energy",
+    "max_energy_capacity",
+    "structural_biomass",
+    "target_biomass_for_molt",
+    "hydration",
+    "nutrition_quality_index",
+    "cumulative_deficit_ticks",
+    "is_starving",
+    "starvation_ticks_elapsed",
+    "catabolized_biomass_total"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "organism_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "stored_energy": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Current active energy reserve for metabolic and behavioral expenditure"
+    },
+    "max_energy_capacity": {
+      "type": "number",
+      "minimum": 1.0,
+      "description": "Upper capacity limit for stored energy"
+    },
+    "structural_biomass": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Accumulated somatic tissue mass"
+    },
+    "target_biomass_for_molt": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Biomass threshold required to trigger the next molt or metamorphic transition"
+    },
+    "hydration": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Normalized somatic fluid balance index"
+    },
+    "nutrition_quality_index": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Nutritional quality rating of recently ingested substrate"
+    },
+    "cumulative_deficit_ticks": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total historical ticks spent under nutritional deficit"
+    },
+    "is_starving": {
+      "type": "boolean",
+      "description": "True when stored energy is zero and somatic tissue catabolism is active"
+    },
+    "starvation_ticks_elapsed": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Consecutive ticks spent in the acute starvation state"
+    },
+    "catabolized_biomass_total": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Total structural biomass consumed for emergency survival energy"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/lifecycle/developmental_state.schema.json",
+  "title": "DevelopmentalState",
+  "description": "State of an organism's developmental realization factor (eta), plasticity, and locking status",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "organism_id",
+    "eta_current",
+    "eta_min_reached",
+    "eta_locked",
+    "eta_lock_stage",
+    "developmental_progress",
+    "plasticity_capacity",
+    "stunting_event_count",
+    "eta_history"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "organism_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "eta_current": {
+      "type": "number",
+      "minimum": 0.60,
+      "maximum": 1.00,
+      "description": "Current developmental realization factor governing somatic scaling"
+    },
+    "eta_min_reached": {
+      "type": "number",
+      "minimum": 0.60,
+      "maximum": 1.00,
+      "description": "Historical nadir of eta experienced during growth"
+    },
+    "eta_locked": {
+      "type": "boolean",
+      "description": "True once the organism enters its morphological locking stage"
+    },
+    "eta_lock_stage": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_]+$",
+      "description": "Lifecycle stage ID where eta becomes permanently immutable for adult morphology"
+    },
+    "developmental_progress": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Normalized progress through the current developmental stage/instar"
+    },
+    "plasticity_capacity": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Remaining physiological plasticity capable of adjusting eta"
+    },
+    "stunting_event_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cumulative count of severe developmental stunting episodes"
+    },
+    "eta_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "tick",
+          "event_type",
+          "delta_eta",
+          "resulting_eta",
+          "trigger_reason"
+        ],
+        "properties": {
+          "tick": { "type": "integer", "minimum": 0 },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "NUTRITIONAL_DEFICIT",
+              "THERMAL_STRESS",
+              "ECDYSIAL_ARREST",
+              "COMPENSATORY_RECOVERY",
+              "LOCKED_AT_METAMORPHOSIS"
+            ]
+          },
+          "delta_eta": { "type": "number" },
+          "resulting_eta": { "type": "number", "minimum": 0.60, "maximum": 1.00 },
+          "trigger_reason": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
