@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OrganismGenome",
+  "description": "Authoritative diploid genetic payload of an individual organism",
+  "type": "object",
+  "required": ["schema_version", "species_id", "loci"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "species_id": { "type": "string", "pattern": "^species_[a-z0-9_]+$" },
+    "loci": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LineageRecord",
+  "description": "Historical and genealogical metadata tracking an organism across generations",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "organism_id",
+    "species_id",
+    "generation",
+    "sex",
+    "parent_ids",
+    "breeding_seed"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "organism_id": { "type": "string" },
+    "species_id": { "type": "string" },
+    "generation": { "type": "integer", "minimum": 0 },
+    "sex": { "type": "string", "enum": ["MALE", "FEMALE"] },
+    "parent_ids": {
+      "type": "object",
+      "required": ["maternal_id", "paternal_id"],
+      "properties": {
+        "maternal_id": { "type": ["string", "null"] },
+        "paternal_id": { "type": ["string", "null"] }
+      }
+    },
+    "breeding_seed": { "type": "string" },
+    "birth_habitat": { "type": "string" },
+    "developmental_realization_factor": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "mutation_count": { "type": "integer", "minimum": 0 },
+    "mutations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["locus_id", "allele_index", "old_value", "new_value"],
+        "properties": {
+          "locus_id": { "type": "string" },
+          "allele_index": { "type": "integer", "enum": [1, 2] },
+          "old_value": { "type": "number" },
+          "new_value": { "type": "number" }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

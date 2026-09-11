@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpeciesDefinition",
+  "description": "Biological baseline profile and loci registry for a taxon in LinhSinhVN",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "species_id",
+    "scientific_name",
+    "common_name_vi",
+    "taxonomy",
+    "supported_loci"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "species_id": { "type": "string", "pattern": "^species_[a-z0-9_]+$" },
+    "scientific_name": { "type": "string" },
+    "common_name_vi": { "type": "string" },
+    "taxonomy": {
+      "type": "object",
+      "required": ["order", "family"],
+      "properties": {
+        "order": { "type": "string" },
+        "family": { "type": "string" },
+        "subfamily": { "type": "string" }
+      }
+    },
+    "supported_loci": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^LOCUS_[A-Z0-9_]+$" },
+      "uniqueItems": true
+    },
+    "default_mutation_rate": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "max_mutation_delta": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+  },
+  "additionalProperties": false
+}

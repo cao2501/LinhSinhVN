@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BreedingResult",
+  "description": "Payload produced by deterministic recombination and mutation of two parent genomes",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "seed_used",
+    "child_id",
+    "child_genome",
+    "mutation_occurred",
+    "mutations"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "seed_used": { "type": "string" },
+    "child_id": { "type": "string" },
+    "child_genome": { "$ref": "genome.schema.json" },
+    "mutation_occurred": { "type": "boolean" },
+    "mutations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["locus_id", "allele_index", "old_value", "new_value"],
+        "properties": {
+          "locus_id": { "type": "string" },
+          "allele_index": { "type": "integer", "enum": [1, 2] },
+          "old_value": { "type": "number" },
+          "new_value": { "type": "number" }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

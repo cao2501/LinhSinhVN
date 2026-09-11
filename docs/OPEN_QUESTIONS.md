@@ -1,39 +1,38 @@
 # LinhSinhVN — Open Questions
 
 **Phase:** Phase 0 — Foundation  
-**Status:** Active Backlog (Unresolved Design & Technical Decisions)  
-**Rule:** Do not resolve these prematurely. They must be evaluated and approved systematically.
+**Status:** Active Backlog (Tracked Design & Technical Decisions)  
 
 ---
 
 ### 1. Protagonist & Species Taxonomy
-- **Exact protagonist species:** What is the precise starter species for the initial prototype slice?
-- **Insect vs. other small animal:** Should the initial focus remain strictly entomological (e.g., rhinoceros beetle *Xylotrupes gideon*, Asian forest scorpion *Heterometrus laoticus*, praying mantis *Hierodula patellifera*), or include small reptiles/amphibians (e.g., Tokay gecko *Gekko gecko*, tree frogs)?
+- **Exact protagonist species [PROVISIONALLY RESOLVED FOR PROTOTYPE]:** *Xylotrupes gideon* complex (Kiến vương hai sừng / Siamese rhinoceros beetle) provisionally selected for the initial prototype slice. See [docs/PROTOTYPE_SPECIES.md](file:///d:/LinhSinhVN/docs/PROTOTYPE_SPECIES.md).
+  - *Remaining Biological Verification:* Confirm regional Indochinese taxonomy differentiation between *Xylotrupes gideon* and *Xylotrupes socrates*.
+- **Insect vs. other small animal:** Focus locked to indigenous Vietnamese Coleoptera for the foundation prototype slice. Secondary branches (Mantodea, Scorpiones, small amphibians) deferred to post-prototype milestones.
 
 ### 2. Art Direction & Visual Identity
 - **Exact art direction:** High-fidelity pixel art (e.g., 32x32 / 64x64 sprites), hand-drawn 2D vector art, or skeletal 2D animation (Spine/DragonBones)?
 - **Visual tone:** Hyper-realistic anatomical biology with stylized accents, or semi-stylized illustrative tropical aesthetic?
-- **Phenotype visualization:** How are dynamic phenotypic differences (larger mandibles, altered leg segments, carapace color shifts) visually composed at runtime (modular sprite layering vs. shader recoloring vs. procedural part assembly)?
+- **Phenotype visualization:** Modular 2D sprite layering selected in principle for *Xylotrupes* (independent cephalic horn, thoracic pronotum, and abdomen/elytra components). Precise asset pipeline and shader recoloring specifications remain open.
 
 ### 3. Genetics & Biological Simulation
-- **Exact genome model:** What is the underlying data structure representing the chromosome set (e.g., fixed-length binary bitstrings, integer arrays, or typed locus dictionaries)?
-- **Allele structure:** Are traits strictly diploid (pairs of maternal/paternal alleles), or do certain loci support polygenic or multi-allelic series?
-- **Dominant/recessive system:** Complete Mendelian dominance, incomplete dominance (blended expression), or co-dominance?
-- **Mutation model:** Pure stochastic random bit flips, or environmental/stress-induced epigenetic mutations with weighted probabilities?
-- **Cross-species breeding rules:** Can closely related sympatric species interbreed with sterile/fertile offspring (hybridization), or is reproduction strictly conspecific?
+- **Exact genome model [RESOLVED FOR PHASE 0]:** Diploid quantitative continuous allele pairs $[a_1, a_2] \in [0.0, 1.0]$ across 8 defined loci. See [docs/GENETICS_SPEC.md](file:///d:/LinhSinhVN/docs/GENETICS_SPEC.md).
+- **Allele structure [RESOLVED FOR PHASE 0]:** Additive codominance default with sex-limited masking for horn allometry.
+- **Mutation model [RESOLVED FOR PHASE 0]:** Bounded continuous delta ($\Delta \sim \text{Uniform}(-\delta_{max}, +\delta_{max})$) clamped to $[0.0, 1.0]$ with physiological trade-off coupling.
+- **Cross-species breeding rules [RESOLVED FOR PHASE 0]:** Strictly conspecific reproduction during Phase 0 prototype. Hybridization rules deferred to multi-species ecosystem phase.
 
 ### 4. Gameplay & Survival Loop
-- **Survival mechanics:** What is the balance between real-time action survival (stamina, dodging, attacking) and tactical/resource-management survival (temperature regulation, humidity, calorie budgeting)?
-- **Death mechanics & Lineage continuation:** What happens when an organism dies before reproducing? Is it a permadeath game over requiring a restart from an ancestral branch, or is there a persistent colony/nursery pool?
-- **Ecosystem simulation depth:** How simulated is the surrounding world when off-screen? Full cellular automaton, statistical abstract pools, or local bubble simulation around the player?
-- **Combat model:** Direct real-time action (hitboxes, lunges, venom strikes) vs. tactical pause or positional micro-clashes?
+- **Survival mechanics:** Balance between real-time action survival (stamina, dodging, grappling) and tactical/metabolic budgeting (starvation interval, temperature regulation).
+- **Death mechanics & Lineage continuation:** Exact penalty and transition when an organism dies prior to mating (e.g., reversion to previous ancestral clutch vs. sibling offshoot).
+- **Ecosystem simulation depth:** Local bubble simulation around player vs. statistical background population tracking.
+- **Combat model:** Micro-mechanics of beetle grappling (horn leverage, grip slip, prying torque) in a 2D plane.
 
 ### 5. Narrative, Dialogue & Fourth-Wall Systems
-- **Fourth-wall character personality:** Exactly how aggressive or endearing is the protagonist's sarcasm? How is the balance struck between humorous roasting and player motivation?
-- **Dialogue generation architecture:** Pre-authored scripted dialogue matrices with dynamic variable insertion vs. deterministic template engines vs. local/cloud LLM runtime generation (strictly decoupled from simulation state)?
+- **Fourth-wall character personality:** Sarcastic tone balance between humorous roasting and player motivation.
+- **Dialogue generation architecture:** Pre-authored scripted dialogue matrices with dynamic variable insertion vs. deterministic template engines vs. local/cloud LLM runtime generation (strictly decoupled from simulation state).
 
 ### 6. Platform, Commercial & Production Scope
-- **Target platform:** Desktop PC (Steam/itch.io) as sole initial target, or mobile (touchscreen input adaptation considerations)?
-- **Multiplayer / Social features:** Fully offline single-player experience, or asynchronous lineage sharing (e.g., exporting genetic codes, encountering wandering ghosts of other players' lineages)?
-- **Monetization (if any):** Premium buy-to-play standalone title, episodic releases, or other models?
-- **Final commercial title:** Will the project retain "LinhSinhVN", or transition to a finalized bilingual title (e.g., "Linh Sinh: Microcosm Vietnam")?
+- **Target platform:** Desktop PC (Steam/itch.io) as sole initial target, with mobile/touch consideration deferred.
+- **Multiplayer / Social features:** Fully offline single-player experience vs. asynchronous lineage export.
+- **Monetization (if any):** Premium buy-to-play standalone title.
+- **Final commercial title:** Evaluation of final title ("LinhSinhVN" vs. commercial subtitle).

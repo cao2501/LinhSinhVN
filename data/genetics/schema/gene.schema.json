@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GeneDefinition",
+  "description": "Definition of a single genetic locus, its expression rule, and bounds",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "locus_id",
+    "display_name_vi",
+    "expression_type",
+    "value_range",
+    "sex_linked"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "locus_id": { "type": "string", "pattern": "^LOCUS_[A-Z0-9_]+$" },
+    "display_name_vi": { "type": "string" },
+    "description": { "type": "string" },
+    "expression_type": {
+      "type": "string",
+      "enum": ["additive_codominance", "dominant_major", "sex_limited_male", "custom_curve"]
+    },
+    "value_range": {
+      "type": "object",
+      "required": ["min", "max"],
+      "properties": {
+        "min": { "type": "number", "minimum": 0.0 },
+        "max": { "type": "number", "maximum": 1.0 }
+      }
+    },
+    "sex_linked": { "type": "boolean" },
+    "phenotype_target": { "type": "string" }
+  },
+  "additionalProperties": false
+}

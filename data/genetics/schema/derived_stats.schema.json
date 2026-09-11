@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DerivedGameplayStats",
+  "description": "Functional gameplay stats calculated from phenotype attributes",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "max_hp",
+    "clash_power",
+    "armor_def",
+    "crawl_speed_cm_s",
+    "max_stamina",
+    "stamina_regen_per_s",
+    "perception_radius",
+    "starvation_hours"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "max_hp": { "type": "number", "minimum": 1.0 },
+    "clash_power": { "type": "number", "minimum": 0.0 },
+    "armor_def": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "crawl_speed_cm_s": { "type": "number", "minimum": 0.0 },
+    "max_stamina": { "type": "number", "minimum": 0.0 },
+    "stamina_regen_per_s": { "type": "number", "minimum": 0.0 },
+    "perception_radius": { "type": "number", "minimum": 0.0 },
+    "starvation_hours": { "type": "number", "minimum": 0.0 }
+  },
+  "additionalProperties": false
+}
