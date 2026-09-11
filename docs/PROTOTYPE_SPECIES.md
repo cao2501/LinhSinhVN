@@ -97,3 +97,45 @@ LinhSinhVN is strictly anchored to biodiversity recorded within the **modern ter
 - **Territorial Justification:**
   Rhinoceros beetles (*kiến vương*) are ubiquitous in Vietnamese folk culture and widely observed in Vietnamese tropical ecosystems. However, under the strict **Vietnamese Biodiversity Boundary**, the exact species-level distinction within modern Vietnamese territory (e.g., whether local populations are *Xylotrupes gideon*, *Xylotrupes socrates*, or specific subspecies) requires formal reference against verified Vietnamese entomological records.
   The internal identifier `xylotrupes_rhinoceros_proto` isolates the gameplay engine while respecting the biodiversity boundary rule.
+
+---
+
+## 5. Canonical Species Profile & Data Contract Architecture (Task 04-B)
+
+The prototype species configuration is formally defined as pure data under [`data/species/xylotrupes_rhinoceros_proto.json`](file:///d:/LinhSinhVN/data/species/xylotrupes_rhinoceros_proto.json), conforming to the generic species schema [`data/species/schema/species_profile.schema.json`](file:///d:/LinhSinhVN/data/species/schema/species_profile.schema.json).
+
+### 5.1 Generic Engine vs. Species Profile Separation
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 GENERIC LIFECYCLE ENGINE                    │
+│   (Stage-agnostic, Substage-agnostic, Deterministic Ticks)  │
+└──────────────────────────────┬──────────────────────────────┘
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│               SPECIES PROFILE DATA CONTRACT                 │
+│         (data/species/xylotrupes_rhinoceros_proto.json)     │
+├─────────────────────────────────────────────────────────────┤
+│ • Lifecycle: EGG ──► LARVA [L1, L2, L3] ──► PUPA ──► ADULT  │
+│ • Development: η ∈ [0.60, 1.00], locked at STAGE_PUPA      │
+│ • Environment: Temperature (24-28°C), Moisture, Humidity    │
+│ • Nutrition: Organic Humus, Decaying Wood, Tree Sap, Fruit  │
+│ • Reproduction: Adult polygyne, clutch size 15-45 eggs      │
+│ • Behavior: Nocturnal, burrowing/crawling/flight, prying    │
+│ • Genetics Ref: references loci without duplicating formulas│
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 5.2 Key Profile Modules & Design Invariants
+
+1. **Species-Specific Instars (`L1`, `L2`, `L3`):**
+   - The existence of 3 larval instars is strictly a **species-level configuration profile**. The core lifecycle engine knows only generic stages and substages.
+2. **Developmental Realization Parameters:**
+   - Initial $\eta = 1.00$, $\eta_{\min} = 0.60$, $\eta_{\max} = 1.00$.
+   - Primary plasticity window: `STAGE_LARVA`.
+   - Irrevocable locking event: `STAGE_PUPA` entry (`eta_lock_trigger: true`).
+3. **Biological Uncertainty & Data Labeling:**
+   - All empirical metadata carries `biological_confidence: "PROVISIONAL"`.
+   - All numerical thresholds, durations, metabolic rates, and molt energy costs carry the explicit caveat: **`GAMEPLAY MODEL / PROTOTYPE CONSTANT`**.
+4. **Genetics Engine Isolation:**
+   - The species profile references `genetics_species_id: "xylotrupes_rhinoceros_proto"` without duplicating loci definitions, allele math, or derived stat formulas. The Genetics Engine remains the sole authoritative source of truth for genetics.
+

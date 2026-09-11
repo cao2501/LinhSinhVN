@@ -1,0 +1,427 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/species/species_profile.schema.json",
+  "title": "SpeciesProfile",
+  "description": "Canonical data-driven biological and gameplay configuration contract for a species in LinhSinhVN",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "profile_version",
+    "species_id",
+    "scientific_name",
+    "common_names",
+    "biodiversity_status",
+    "taxonomy_status",
+    "vietnam_territory_recorded",
+    "biological_confidence",
+    "genetics_profile_reference",
+    "lifecycle_profile",
+    "development_profile",
+    "growth_profile",
+    "environment_profile",
+    "nutrition_profile",
+    "reproduction_profile",
+    "behavior_profile"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "profile_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "species_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "scientific_name": {
+      "type": "string"
+    },
+    "common_names": {
+      "type": "object",
+      "required": ["vi"],
+      "properties": {
+        "vi": { "type": "string" },
+        "en": { "type": "string" }
+      },
+      "additionalProperties": { "type": "string" }
+    },
+    "biodiversity_status": {
+      "type": "string",
+      "enum": [
+        "NATIVE",
+        "ENDEMIC",
+        "PROVISIONAL",
+        "NON_NATIVE_MIGRATORY",
+        "NON_NATIVE_INTRODUCED"
+      ],
+      "description": "Territorial classification within modern Vietnam"
+    },
+    "taxonomy_status": {
+      "type": "string",
+      "enum": [
+        "PROVISIONAL — BIOLOGICAL VERIFICATION REQUIRED",
+        "VERIFIED"
+      ]
+    },
+    "vietnam_territory_recorded": {
+      "type": "boolean",
+      "description": "Whether verifiable records exist within modern Vietnam"
+    },
+    "vietnam_evidence_reference": {
+      "type": "string",
+      "description": "Citation or registry ID of verified record"
+    },
+    "biological_confidence": {
+      "type": "string",
+      "enum": ["CONFIRMED", "HIGH", "MODERATE", "PROVISIONAL"],
+      "description": "Overall empirical confidence of biological data in this profile"
+    },
+    "genetics_profile_reference": {
+      "type": "object",
+      "required": ["genetics_species_id"],
+      "properties": {
+        "genetics_species_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "lifecycle_profile": {
+      "type": "object",
+      "required": ["initial_stage_id", "stages"],
+      "properties": {
+        "initial_stage_id": { "type": "string", "pattern": "^[a-zA-Z0-9_]+$" },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "stage_id",
+              "stage_name",
+              "order",
+              "is_feeding_stage",
+              "is_growth_stage",
+              "is_motile_stage",
+              "is_reproductive_stage",
+              "plasticity_enabled",
+              "eta_lock_trigger",
+              "min_duration_ticks"
+            ],
+            "properties": {
+              "stage_id": { "type": "string", "pattern": "^[a-zA-Z0-9_]+$" },
+              "stage_name": { "type": "string" },
+              "order": { "type": "integer", "minimum": 1 },
+              "is_feeding_stage": { "type": "boolean" },
+              "is_growth_stage": { "type": "boolean" },
+              "is_motile_stage": { "type": "boolean" },
+              "is_reproductive_stage": { "type": "boolean" },
+              "plasticity_enabled": { "type": "boolean" },
+              "eta_lock_trigger": { "type": "boolean" },
+              "min_duration_ticks": { "type": "integer", "minimum": 0 },
+              "max_duration_ticks": { "type": ["integer", "null"], "minimum": 0 },
+              "substages": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "substage_id",
+                    "substage_name",
+                    "order",
+                    "target_biomass",
+                    "min_duration_ticks",
+                    "molt_resource_cost"
+                  ],
+                  "properties": {
+                    "substage_id": { "type": "string", "pattern": "^[a-zA-Z0-9_]+$" },
+                    "substage_name": { "type": "string" },
+                    "order": { "type": "integer", "minimum": 1 },
+                    "target_biomass": { "type": "number", "minimum": 0.0 },
+                    "min_duration_ticks": { "type": "integer", "minimum": 0 },
+                    "molt_resource_cost": { "type": "number", "minimum": 0.0 }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "transition_conditions": { "type": "object" },
+              "failure_conditions": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "notes": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "development_profile": {
+      "type": "object",
+      "required": [
+        "initial_eta",
+        "eta_min",
+        "eta_max",
+        "plasticity_stages",
+        "eta_lock_stage",
+        "deficit_response_rate",
+        "stress_response_rate",
+        "recovery_response_rate",
+        "recovery_cap",
+        "developmental_failure_conditions",
+        "confidence"
+      ],
+      "properties": {
+        "initial_eta": { "type": "number", "minimum": 0.60, "maximum": 1.00 },
+        "eta_min": { "type": "number", "minimum": 0.60, "maximum": 1.00 },
+        "eta_max": { "type": "number", "minimum": 0.60, "maximum": 1.00 },
+        "plasticity_stages": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "eta_lock_stage": { "type": "string", "pattern": "^[a-zA-Z0-9_]+$" },
+        "deficit_response_rate": { "type": "number", "minimum": 0.0 },
+        "stress_response_rate": { "type": "number", "minimum": 0.0 },
+        "recovery_response_rate": { "type": "number", "minimum": 0.0 },
+        "recovery_cap": { "type": "number", "minimum": 0.60, "maximum": 1.00 },
+        "developmental_failure_conditions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["CONFIRMED", "HIGH", "MODERATE", "PROVISIONAL"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "growth_profile": {
+      "type": "object",
+      "required": [
+        "growth_stages",
+        "base_biomass_synthesis_rate",
+        "biomass_conversion_yield",
+        "stage_growth_multipliers",
+        "max_biomass_index",
+        "molt_biomass_thresholds",
+        "molt_energy_costs",
+        "confidence"
+      ],
+      "properties": {
+        "growth_stages": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "base_biomass_synthesis_rate": { "type": "number", "minimum": 0.0 },
+        "biomass_conversion_yield": { "type": "number", "minimum": 0.0 },
+        "stage_growth_multipliers": {
+          "type": "object",
+          "additionalProperties": { "type": "number", "minimum": 0.0 }
+        },
+        "max_biomass_index": { "type": "number", "minimum": 0.0 },
+        "molt_biomass_thresholds": {
+          "type": "object",
+          "additionalProperties": { "type": "number", "minimum": 0.0 }
+        },
+        "molt_energy_costs": {
+          "type": "object",
+          "additionalProperties": { "type": "number", "minimum": 0.0 }
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["CONFIRMED", "HIGH", "MODERATE", "PROVISIONAL"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "environment_profile": {
+      "type": "object",
+      "required": [
+        "temperature_celsius",
+        "relative_humidity",
+        "substrate_moisture",
+        "food_availability",
+        "shelter_security",
+        "crowding_density",
+        "confidence"
+      ],
+      "properties": {
+        "temperature_celsius": {
+          "type": "object",
+          "required": ["preferred_min", "preferred_max", "tolerated_min", "tolerated_max", "lethal_min", "lethal_max"],
+          "properties": {
+            "preferred_min": { "type": "number" },
+            "preferred_max": { "type": "number" },
+            "tolerated_min": { "type": "number" },
+            "tolerated_max": { "type": "number" },
+            "lethal_min": { "type": "number" },
+            "lethal_max": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        "relative_humidity": {
+          "type": "object",
+          "required": ["preferred_min", "preferred_max", "tolerated_min", "tolerated_max", "lethal_min", "lethal_max"],
+          "properties": {
+            "preferred_min": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "preferred_max": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "tolerated_min": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "tolerated_max": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "lethal_min": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "lethal_max": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+          },
+          "additionalProperties": false
+        },
+        "substrate_moisture": {
+          "type": "object",
+          "required": ["preferred_min", "preferred_max", "tolerated_min", "tolerated_max", "lethal_min", "lethal_max"],
+          "properties": {
+            "preferred_min": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "preferred_max": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "tolerated_min": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "tolerated_max": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "lethal_min": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "lethal_max": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+          },
+          "additionalProperties": false
+        },
+        "food_availability": {
+          "type": "object",
+          "required": ["preferred_min", "tolerated_min", "deficit_threshold"],
+          "properties": {
+            "preferred_min": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "tolerated_min": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "deficit_threshold": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+          },
+          "additionalProperties": false
+        },
+        "shelter_security": {
+          "type": "object",
+          "required": ["preferred_min", "tolerated_min"],
+          "properties": {
+            "preferred_min": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "tolerated_min": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+          },
+          "additionalProperties": false
+        },
+        "crowding_density": {
+          "type": "object",
+          "required": ["preferred_max", "tolerated_max", "stress_onset"],
+          "properties": {
+            "preferred_max": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "tolerated_max": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "stress_onset": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+          },
+          "additionalProperties": false
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["CONFIRMED", "HIGH", "MODERATE", "PROVISIONAL"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "nutrition_profile": {
+      "type": "object",
+      "required": [
+        "consumable_resources",
+        "stage_diet_matrix",
+        "energy_yield_per_unit",
+        "biomass_yield_per_unit",
+        "starvation_threshold",
+        "confidence"
+      ],
+      "properties": {
+        "consumable_resources": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "stage_diet_matrix": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "energy_yield_per_unit": { "type": "number", "minimum": 0.0 },
+        "biomass_yield_per_unit": { "type": "number", "minimum": 0.0 },
+        "starvation_threshold": { "type": "number", "minimum": 0.0 },
+        "confidence": {
+          "type": "string",
+          "enum": ["CONFIRMED", "HIGH", "MODERATE", "PROVISIONAL"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "reproduction_profile": {
+      "type": "object",
+      "required": [
+        "reproductive_stage_id",
+        "mating_system",
+        "sex_requirements",
+        "min_mating_age_ticks",
+        "breeding_cooldown_ticks",
+        "energy_cost_per_mating",
+        "clutch_size_min",
+        "clutch_size_max",
+        "parental_care",
+        "confidence"
+      ],
+      "properties": {
+        "reproductive_stage_id": { "type": "string", "pattern": "^[a-zA-Z0-9_]+$" },
+        "mating_system": { "type": "string" },
+        "sex_requirements": { "type": "string" },
+        "min_mating_age_ticks": { "type": "integer", "minimum": 0 },
+        "breeding_cooldown_ticks": { "type": "integer", "minimum": 0 },
+        "energy_cost_per_mating": { "type": "number", "minimum": 0.0 },
+        "clutch_size_min": { "type": "integer", "minimum": 1 },
+        "clutch_size_max": { "type": "integer", "minimum": 1 },
+        "parental_care": { "type": "string" },
+        "confidence": {
+          "type": "string",
+          "enum": ["CONFIRMED", "HIGH", "MODERATE", "PROVISIONAL"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "behavior_profile": {
+      "type": "object",
+      "required": [
+        "primary_activity_period",
+        "locomotion_modes",
+        "capabilities",
+        "priorities",
+        "confidence"
+      ],
+      "properties": {
+        "primary_activity_period": {
+          "type": "string",
+          "enum": ["DIURNAL", "NOCTURNAL", "CREPUSCULAR", "CATHEMERAL"]
+        },
+        "locomotion_modes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        },
+        "priorities": {
+          "type": "object",
+          "additionalProperties": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["CONFIRMED", "HIGH", "MODERATE", "PROVISIONAL"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

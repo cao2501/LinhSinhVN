@@ -15,7 +15,7 @@ function findJsonFiles(dir, fileList = []) {
     const stat = fs.statSync(filePath);
     if (stat.isDirectory()) {
       findJsonFiles(filePath, fileList);
-    } else if (file.endsWith('.json')) {
+    } else if (file.endsWith('.schema.json') || (filePath.includes(`${path.sep}schema${path.sep}`) && file.endsWith('.json'))) {
       fileList.push(filePath);
     }
   }

@@ -1,0 +1,280 @@
+{
+  "$schema": "./schema/species_profile.schema.json",
+  "schema_version": "1.0.0",
+  "profile_version": "0.1.0",
+  "species_id": "xylotrupes_rhinoceros_proto",
+  "scientific_name": "Xylotrupes gideon complex",
+  "common_names": {
+    "vi": "Kiến vương hai sừng",
+    "en": "Rhinoceros beetle prototype"
+  },
+  "biodiversity_status": "PROVISIONAL",
+  "taxonomy_status": "PROVISIONAL — BIOLOGICAL VERIFICATION REQUIRED",
+  "vietnam_territory_recorded": true,
+  "vietnam_evidence_reference": "Provisional folk entomology and agricultural records in Vietnam (requires museum verification)",
+  "biological_confidence": "PROVISIONAL",
+  "genetics_profile_reference": {
+    "genetics_species_id": "xylotrupes_rhinoceros_proto",
+    "notes": "References loci registry in data/genetics/schema/species.schema.json without duplicating loci definitions"
+  },
+  "lifecycle_profile": {
+    "initial_stage_id": "STAGE_EGG",
+    "stages": [
+      {
+        "stage_id": "STAGE_EGG",
+        "stage_name": "Trứng (Embryonic Egg)",
+        "order": 1,
+        "is_feeding_stage": false,
+        "is_growth_stage": false,
+        "is_motile_stage": false,
+        "is_reproductive_stage": false,
+        "plasticity_enabled": false,
+        "eta_lock_trigger": false,
+        "min_duration_ticks": 250,
+        "max_duration_ticks": 400,
+        "substages": [],
+        "transition_conditions": {
+          "required_thermal_sum": 250.0
+        },
+        "failure_conditions": [
+          "DESICCATION_SUBSTRATE_MOISTURE_BELOW_0_20",
+          "LETHAL_TEMPERATURE_FREEZING_OR_OVERHEATING"
+        ],
+        "notes": "GAMEPLAY MODEL / PROTOTYPE CONSTANT: Yolk-fueled embryonic incubation"
+      },
+      {
+        "stage_id": "STAGE_LARVA",
+        "stage_name": "Ấu trùng (Larva / Grub)",
+        "order": 2,
+        "is_feeding_stage": true,
+        "is_growth_stage": true,
+        "is_motile_stage": true,
+        "is_reproductive_stage": false,
+        "plasticity_enabled": true,
+        "eta_lock_trigger": false,
+        "min_duration_ticks": 1500,
+        "max_duration_ticks": 3500,
+        "substages": [
+          {
+            "substage_id": "L1",
+            "substage_name": "Ấu trùng tuổi 1 (Instar 1)",
+            "order": 1,
+            "target_biomass": 0.15,
+            "min_duration_ticks": 300,
+            "molt_resource_cost": 25.0
+          },
+          {
+            "substage_id": "L2",
+            "substage_name": "Ấu trùng tuổi 2 (Instar 2)",
+            "order": 2,
+            "target_biomass": 0.45,
+            "min_duration_ticks": 500,
+            "molt_resource_cost": 45.0
+          },
+          {
+            "substage_id": "L3",
+            "substage_name": "Ấu trùng tuổi 3 (Instar 3)",
+            "order": 3,
+            "target_biomass": 1.00,
+            "min_duration_ticks": 700,
+            "molt_resource_cost": 70.0
+          }
+        ],
+        "transition_conditions": {
+          "min_biomass_index": 1.00,
+          "cleared_wandering_phase": true
+        },
+        "failure_conditions": [
+          "STARVATION_STRUCTURAL_EXHAUSTION",
+          "MOLT_FAILURE_ARREST",
+          "LETHAL_SUBSTRATE_ANOXIA"
+        ],
+        "notes": "GAMEPLAY MODEL / PROTOTYPE CONSTANT: L1/L2/L3 are species-specific instars representing the primary plasticity window for eta"
+      },
+      {
+        "stage_id": "STAGE_PUPA",
+        "stage_name": "Nhộng (Pupa)",
+        "order": 3,
+        "is_feeding_stage": false,
+        "is_growth_stage": false,
+        "is_motile_stage": false,
+        "is_reproductive_stage": false,
+        "plasticity_enabled": false,
+        "eta_lock_trigger": true,
+        "min_duration_ticks": 400,
+        "max_duration_ticks": 800,
+        "substages": [],
+        "transition_conditions": {
+          "required_pupal_thermal_sum": 400.0,
+          "pupal_cell_intact": true
+        },
+        "failure_conditions": [
+          "METABOLIC_EXHAUSTION_PRIOR_TO_ECLOSION",
+          "PUPAL_CELL_COLLAPSE",
+          "DESICCATION_MORTALITY"
+        ],
+        "notes": "GAMEPLAY MODEL / PROTOTYPE CONSTANT: Entry into STAGE_PUPA permanently locks eta for adult morphology"
+      },
+      {
+        "stage_id": "STAGE_ADULT",
+        "stage_name": "Trưởng thành (Adult / Imago)",
+        "order": 4,
+        "is_feeding_stage": true,
+        "is_growth_stage": false,
+        "is_motile_stage": true,
+        "is_reproductive_stage": true,
+        "plasticity_enabled": false,
+        "eta_lock_trigger": false,
+        "min_duration_ticks": 1000,
+        "max_duration_ticks": 3000,
+        "substages": [],
+        "transition_conditions": {},
+        "failure_conditions": [
+          "SENESCENCE_EXHAUSTION",
+          "ACUTE_STARVATION",
+          "COMBAT_MORTALITY",
+          "PREDATION"
+        ],
+        "notes": "GAMEPLAY MODEL / PROTOTYPE CONSTANT: Sclerotized exoskeleton, fixed morphology, active combat and breeding"
+      }
+    ]
+  },
+  "development_profile": {
+    "initial_eta": 1.00,
+    "eta_min": 0.60,
+    "eta_max": 1.00,
+    "plasticity_stages": ["STAGE_LARVA"],
+    "eta_lock_stage": "STAGE_PUPA",
+    "deficit_response_rate": 0.002,
+    "stress_response_rate": 0.001,
+    "recovery_response_rate": 0.0004,
+    "recovery_cap": 1.00,
+    "developmental_failure_conditions": [
+      "CRITICAL_STARVATION",
+      "ECDYSIAL_ARREST",
+      "PUPAL_EXHAUSTION"
+    ],
+    "confidence": "PROVISIONAL"
+  },
+  "growth_profile": {
+    "growth_stages": ["STAGE_LARVA"],
+    "base_biomass_synthesis_rate": 0.005,
+    "biomass_conversion_yield": 0.80,
+    "stage_growth_multipliers": {
+      "L1": 1.2,
+      "L2": 1.0,
+      "L3": 0.8
+    },
+    "max_biomass_index": 2.20,
+    "molt_biomass_thresholds": {
+      "L1_to_L2": 0.15,
+      "L2_to_L3": 0.45,
+      "L3_to_PUPA": 1.00
+    },
+    "molt_energy_costs": {
+      "L1_to_L2": 25.0,
+      "L2_to_L3": 45.0,
+      "L3_to_PUPA": 70.0
+    },
+    "confidence": "PROVISIONAL"
+  },
+  "environment_profile": {
+    "temperature_celsius": {
+      "preferred_min": 24.0,
+      "preferred_max": 28.0,
+      "tolerated_min": 18.0,
+      "tolerated_max": 34.0,
+      "lethal_min": 10.0,
+      "lethal_max": 40.0
+    },
+    "relative_humidity": {
+      "preferred_min": 0.65,
+      "preferred_max": 0.85,
+      "tolerated_min": 0.45,
+      "tolerated_max": 0.95,
+      "lethal_min": 0.20,
+      "lethal_max": 1.00
+    },
+    "substrate_moisture": {
+      "preferred_min": 0.50,
+      "preferred_max": 0.75,
+      "tolerated_min": 0.30,
+      "tolerated_max": 0.85,
+      "lethal_min": 0.15,
+      "lethal_max": 0.95
+    },
+    "food_availability": {
+      "preferred_min": 0.60,
+      "tolerated_min": 0.20,
+      "deficit_threshold": 0.30
+    },
+    "shelter_security": {
+      "preferred_min": 0.70,
+      "tolerated_min": 0.30
+    },
+    "crowding_density": {
+      "preferred_max": 0.30,
+      "tolerated_max": 0.60,
+      "stress_onset": 0.40
+    },
+    "confidence": "PROVISIONAL"
+  },
+  "nutrition_profile": {
+    "consumable_resources": [
+      "ORGANIC_HUMUS",
+      "DECAYING_WOOD",
+      "TREE_SAP",
+      "ROTTEN_FRUIT"
+    ],
+    "stage_diet_matrix": {
+      "STAGE_EGG": [],
+      "STAGE_LARVA": [
+        "ORGANIC_HUMUS",
+        "DECAYING_WOOD"
+      ],
+      "STAGE_PUPA": [],
+      "STAGE_ADULT": [
+        "TREE_SAP",
+        "ROTTEN_FRUIT"
+      ]
+    },
+    "energy_yield_per_unit": 1.20,
+    "biomass_yield_per_unit": 0.80,
+    "starvation_threshold": 0.0,
+    "confidence": "PROVISIONAL"
+  },
+  "reproduction_profile": {
+    "reproductive_stage_id": "STAGE_ADULT",
+    "mating_system": "POLYGYNOUS_SCRAMBLE_AND_CONTEST",
+    "sex_requirements": "HETEROSEXUAL_MALE_FEMALE",
+    "min_mating_age_ticks": 100,
+    "breeding_cooldown_ticks": 300,
+    "energy_cost_per_mating": 40.0,
+    "clutch_size_min": 15,
+    "clutch_size_max": 45,
+    "parental_care": "NONE_POST_OVIPOSITION",
+    "confidence": "PROVISIONAL"
+  },
+  "behavior_profile": {
+    "primary_activity_period": "NOCTURNAL",
+    "locomotion_modes": [
+      "CRAWLING",
+      "BURROWING",
+      "FLIGHT"
+    ],
+    "capabilities": {
+      "can_fly": true,
+      "can_burrow": true,
+      "can_climb": true,
+      "can_stridulate": true
+    },
+    "priorities": {
+      "foraging": 0.70,
+      "shelter_seeking": 0.60,
+      "mating": 0.80,
+      "territorial_defense": 0.90,
+      "fleeing": 0.40
+    },
+    "confidence": "PROVISIONAL"
+  }
+}
