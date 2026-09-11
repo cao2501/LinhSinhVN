@@ -181,6 +181,21 @@ for (const profilePath of profilePaths) {
     checkRange('substrate_moisture', env.substrate_moisture);
   }
 
+  // 7. Reproduction Profile Check
+  if (profile.reproduction_profile) {
+    const rep = profile.reproduction_profile;
+    if (!rep.sex_determination || typeof rep.sex_determination !== 'object') {
+      errors.push('reproduction_profile.sex_determination must be an object');
+    } else {
+      if (rep.sex_determination.mode !== 'FIXED_RATIO') {
+        errors.push(`reproduction_profile.sex_determination.mode '${rep.sex_determination.mode}' is unsupported`);
+      }
+      if (typeof rep.sex_determination.male_ratio !== 'number' || rep.sex_determination.male_ratio < 0.0 || rep.sex_determination.male_ratio > 1.0) {
+        errors.push(`reproduction_profile.sex_determination.male_ratio must be a number in [0.0, 1.0]`);
+      }
+    }
+  }
+
   // Report
   if (errors.length > 0) {
     console.error(`[FAIL] ${profilePath} failed validation with ${errors.length} error(s):`);

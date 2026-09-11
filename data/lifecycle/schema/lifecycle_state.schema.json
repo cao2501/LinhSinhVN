@@ -21,7 +21,9 @@
     "environment_state",
     "stress_state",
     "physiological_modifiers",
-    "death_record"
+    "death_record",
+    "reproduction_cooldown_until_tick",
+    "last_reproduction_tick"
   ],
   "properties": {
     "schema_version": {
@@ -107,6 +109,16 @@
     "death_record": {
       "type": ["object", "null"],
       "description": "Terminal immutable death record sealed when status is DEAD; null while ALIVE"
+    },
+    "reproduction_cooldown_until_tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Simulation tick counter until which organism reproduction is blocked"
+    },
+    "last_reproduction_tick": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Simulation tick at which organism most recently completed reproduction; null if never mated"
     }
   },
   "additionalProperties": false

@@ -380,6 +380,7 @@
         "clutch_size_min",
         "clutch_size_max",
         "parental_care",
+        "sex_determination",
         "confidence"
       ],
       "properties": {
@@ -392,6 +393,23 @@
         "clutch_size_min": { "type": "integer", "minimum": 1 },
         "clutch_size_max": { "type": "integer", "minimum": 1 },
         "parental_care": { "type": "string" },
+        "sex_determination": {
+          "type": "object",
+          "required": ["mode", "male_ratio"],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["FIXED_RATIO"]
+            },
+            "male_ratio": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0,
+              "description": "GAMEPLAY MODEL / PROTOTYPE CONSTANT: Fixed probability of offspring developing as MALE (e.g. 0.50)"
+            }
+          },
+          "additionalProperties": false
+        },
         "confidence": {
           "type": "string",
           "enum": ["CONFIRMED", "HIGH", "MODERATE", "PROVISIONAL"]

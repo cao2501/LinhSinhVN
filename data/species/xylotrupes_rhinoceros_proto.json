@@ -261,6 +261,10 @@
     "clutch_size_min": 15,
     "clutch_size_max": 45,
     "parental_care": "NONE_POST_OVIPOSITION",
+    "sex_determination": {
+      "mode": "FIXED_RATIO",
+      "male_ratio": 0.50
+    },
     "confidence": "PROVISIONAL"
   },
   "behavior_profile": {

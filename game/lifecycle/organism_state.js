@@ -162,6 +162,10 @@ export function createOrganismState({
       derived_stats: immutableDerivedStats
     },
 
+    // Reproduction Cooldown Tracking (conforming to lifecycle_state schema)
+    reproduction_cooldown_until_tick: 0,
+    last_reproduction_tick: null,
+
     // Death Record (null while ALIVE)
     death_record: null
   };
@@ -265,4 +269,68 @@ export function assertStateInvariants(state, speciesProfile) {
   if (state.physiological_modifiers.senescence_metabolic_modifier < 1.00) {
     throw new RangeError('senescence_metabolic_modifier cannot be less than 1.00');
   }
+
+  // Reproduction Cooldown Tracking
+  if (typeof state.reproduction_cooldown_until_tick !== 'number' || state.reproduction_cooldown_until_tick < 0) {
+    throw new RangeError('reproduction_cooldown_until_tick must be a non-negative integer');
+  }
+  if (state.last_reproduction_tick !== null && (typeof state.last_reproduction_tick !== 'number' || state.last_reproduction_tick < 0)) {
+    throw new RangeError('last_reproduction_tick must be null or a non-negative integer');
+  }
+}
+
+/**
+ * Preflight validation of reproduction state deltas for an organism.
+ * Pure verification: strictly ZERO mutation.
+ *
+ * @param {object} state - Parent OrganismState
+ * @param {object} deltas - Reproduction state deltas
+ * @param {number} deltas.energy_cost - Required energy deduction
+ * @param {number} deltas.reproduction_cooldown_until_tick - Target cooldown tick
+ * @param {number} deltas.last_reproduction_tick - Target last reproduction tick
+ * @param {object} speciesProfile - Deeply frozen SpeciesProfile
+ * @throws {Error|TypeError|RangeError} If any precondition is violated
+ */
+export function validateReproductionDeltas(state, deltas, speciesProfile) {
+  if (!state || typeof state !== 'object') {
+    throw new TypeError('state must be a non-null object');
+  }
+  if (!state.is_alive || state.status !== 'ALIVE') {
+    throw new Error(`Cannot apply reproduction deltas to dead or non-alive organism '${state.organism_id}'`);
+  }
+  if (!deltas || typeof deltas !== 'object') {
+    throw new TypeError('deltas must be a non-null object');
+  }
+  if (typeof deltas.energy_cost !== 'number' || deltas.energy_cost < 0) {
+    throw new RangeError(`Invalid reproduction energy cost: ${deltas.energy_cost}`);
+  }
+  if (state.nutrition_state.stored_energy < deltas.energy_cost) {
+    throw new Error(
+      `Insufficient stored energy (${state.nutrition_state.stored_energy.toFixed(2)}) for reproduction cost (${deltas.energy_cost}) on organism '${state.organism_id}'`
+    );
+  }
+  if (typeof deltas.reproduction_cooldown_until_tick !== 'number' || deltas.reproduction_cooldown_until_tick < 0) {
+    throw new RangeError(`Invalid reproduction_cooldown_until_tick: ${deltas.reproduction_cooldown_until_tick}`);
+  }
+  if (typeof deltas.last_reproduction_tick !== 'number' || deltas.last_reproduction_tick < 0) {
+    throw new RangeError(`Invalid last_reproduction_tick: ${deltas.last_reproduction_tick}`);
+  }
+  return true;
+}
+
+/**
+ * Applies preflight-validated reproduction deltas to an organism.
+ * Must only be called after validateReproductionDeltas has succeeded for ALL parents in the transaction.
+ *
+ * @param {object} state - Parent OrganismState
+ * @param {object} deltas - Reproduction state deltas
+ * @param {object} speciesProfile - Deeply frozen SpeciesProfile
+ * @returns {object} Mutated organism state
+ */
+export function applyReproductionDeltas(state, deltas, speciesProfile) {
+  state.nutrition_state.stored_energy = Math.max(0.0, state.nutrition_state.stored_energy - deltas.energy_cost);
+  state.reproduction_cooldown_until_tick = deltas.reproduction_cooldown_until_tick;
+  state.last_reproduction_tick = deltas.last_reproduction_tick;
+  assertStateInvariants(state, speciesProfile);
+  return state;
 }

@@ -49,6 +49,7 @@
         "STARVATION_STARTED",
         "STARVATION_ENDED",
         "INJURY_RECEIVED",
+        "REPRODUCTION_COMPLETED",
         "DEATH"
       ]
     },

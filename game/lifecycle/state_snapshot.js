@@ -88,7 +88,9 @@ export function serializeStateSnapshot(state) {
       senescence_metabolic_modifier: state.physiological_modifiers.senescence_metabolic_modifier
     },
 
-    death_record: state.death_record ? JSON.parse(JSON.stringify(state.death_record)) : null
+    death_record: state.death_record ? JSON.parse(JSON.stringify(state.death_record)) : null,
+    reproduction_cooldown_until_tick: state.reproduction_cooldown_until_tick || 0,
+    last_reproduction_tick: state.last_reproduction_tick !== undefined ? state.last_reproduction_tick : null
   };
 
   // Deep clone and freeze snapshot to prevent any subsequent tampering
