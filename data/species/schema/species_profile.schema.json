@@ -125,6 +125,16 @@
               "eta_lock_trigger": { "type": "boolean" },
               "min_duration_ticks": { "type": "integer", "minimum": 0 },
               "max_duration_ticks": { "type": ["integer", "null"], "minimum": 0 },
+              "metabolic_drain_multiplier": {
+                "type": "number",
+                "minimum": 0.0,
+                "description": "Configurable stage-specific basal metabolic drain multiplier (e.g. 0.20 for quiescent stages)"
+              },
+              "motility_multiplier": {
+                "type": "number",
+                "minimum": 0.0,
+                "description": "GAMEPLAY MODEL / PROTOTYPE CONSTANT: Stage-specific motility multiplier on basal metabolic drain (e.g. 0.20 for non-motile stages, 1.00 for active motile stages)"
+              },
               "substages": {
                 "type": "array",
                 "items": {

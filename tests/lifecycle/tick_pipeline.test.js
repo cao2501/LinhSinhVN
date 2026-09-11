@@ -231,4 +231,149 @@ describe('12-Step Tick Pipeline Execution', () => {
       executeTickPipeline(state, profile, {}, emitter);
     }, Error);
   });
+
+  test('Step 10: DEVELOPMENTAL_FAILURE terminal death via event/arrest and non-feeding exhaustion', () => {
+    // 1. Triggered via explicit developmental arrest event input
+    const state1 = createTestOrganism('STAGE_LARVA', 'L2');
+    const emitter1 = new LifecycleEventEmitter(state1.simulation_seed, state1.organism_id, state1.species_id);
+
+    executeTickPipeline(state1, profile, {
+      developmental_failure: { reason: 'Lethal ecdysial arrest during cuticle shedding' }
+    }, emitter1);
+
+    assert.equal(state1.is_alive, false);
+    assert.equal(state1.status, 'DEAD');
+    assert.ok(state1.death_record !== null);
+    assert.equal(state1.death_record.primary_cause, 'DEVELOPMENTAL_FAILURE');
+    assert.ok(state1.death_record.detailed_cause_narrative.includes('Lethal ecdysial arrest'));
+    assert.ok(Object.isFrozen(state1.death_record));
+
+    // Dead organism cannot tick
+    assert.throws(() => {
+      executeTickPipeline(state1, profile, {}, emitter1);
+    }, /dead organism/i);
+
+    // 2. Triggered in non-feeding developmental stage (STAGE_PUPA) when metabolic energy is exhausted
+    const state2 = createTestOrganism('STAGE_PUPA', null);
+    state2.nutrition_state.stored_energy = 0.0;
+    state2.nutrition_state.is_starving = true;
+    state2.nutrition_state.starvation_ticks_elapsed = 150;
+    const emitter2 = new LifecycleEventEmitter(state2.simulation_seed, state2.organism_id, state2.species_id);
+
+    executeTickPipeline(state2, profile, { resources: [] }, emitter2);
+
+    assert.equal(state2.is_alive, false);
+    assert.equal(state2.status, 'DEAD');
+    assert.ok(state2.death_record !== null);
+    assert.equal(state2.death_record.primary_cause, 'DEVELOPMENTAL_FAILURE');
+    assert.ok(state2.death_record.detailed_cause_narrative.includes('Metabolic energy exhaustion prior to adult eclosion'));
+  });
+
+  test('Step 10: CATASTROPHIC_EVENT terminal death via generic external input or extreme hazard', () => {
+    // 1. Generic catastrophic event input
+    const state1 = createTestOrganism('STAGE_LARVA', 'L1');
+    const emitter1 = new LifecycleEventEmitter(state1.simulation_seed, state1.organism_id, state1.species_id);
+
+    executeTickPipeline(state1, profile, {
+      catastrophic_event: { reason: 'Severe substrate collapse crushing' }
+    }, emitter1);
+
+    assert.equal(state1.is_alive, false);
+    assert.equal(state1.status, 'DEAD');
+    assert.ok(state1.death_record !== null);
+    assert.equal(state1.death_record.primary_cause, 'CATASTROPHIC_EVENT');
+    assert.ok(state1.death_record.detailed_cause_narrative.includes('Severe substrate collapse crushing'));
+    assert.ok(Object.isFrozen(state1.death_record));
+
+    // 2. External events array input
+    const state2 = createTestOrganism('STAGE_LARVA', 'L1');
+    const emitter2 = new LifecycleEventEmitter(state2.simulation_seed, state2.organism_id, state2.species_id);
+
+    executeTickPipeline(state2, profile, {
+      external_events: [{ type: 'CATASTROPHIC_EVENT', narrative: 'Flash flood inundation' }]
+    }, emitter2);
+
+    assert.equal(state2.is_alive, false);
+    assert.equal(state2.death_record.primary_cause, 'CATASTROPHIC_EVENT');
+
+    // 3. Catastrophic environmental hazard rating >= 1.0
+    const state3 = createTestOrganism('STAGE_LARVA', 'L1');
+    const emitter3 = new LifecycleEventEmitter(state3.simulation_seed, state3.organism_id, state3.species_id);
+
+    executeTickPipeline(state3, profile, {
+      environment: { environmental_hazard_rating: 1.0 }
+    }, emitter3);
+
+    assert.equal(state3.is_alive, false);
+    assert.equal(state3.death_record.primary_cause, 'CATASTROPHIC_EVENT');
+  });
+
+  test('All five death causes satisfy the exact same terminal invariants', () => {
+    const deathCauses = [
+      { cause: 'STARVATION', input: {}, setup: (st) => { st.nutrition_state.stored_energy = 0; st.nutrition_state.is_starving = true; st.nutrition_state.starvation_ticks_elapsed = 200; } },
+      { cause: 'DEVELOPMENTAL_FAILURE', input: { developmental_failure: true }, setup: () => {} },
+      { cause: 'ENVIRONMENTAL_FAILURE', input: { environment: { ambient_temperature_celsius: -5.0 } }, setup: () => {} },
+      { cause: 'OLD_AGE', input: {}, setup: (st) => { st.current_stage_id = 'STAGE_ADULT'; st.current_substage_id = null; st.stage_age_ticks = 3005; } },
+      { cause: 'CATASTROPHIC_EVENT', input: { catastrophic_event: true }, setup: () => {} }
+    ];
+
+    for (const { cause, input, setup } of deathCauses) {
+      const state = createTestOrganism('STAGE_LARVA', 'L1');
+      setup(state);
+      const emitter = new LifecycleEventEmitter(state.simulation_seed, state.organism_id, state.species_id);
+
+      const result = executeTickPipeline(state, profile, input, emitter);
+
+      // Invariant 1: Vitality & terminal status
+      assert.equal(state.is_alive, false, `${cause} must set is_alive = false`);
+      assert.equal(state.status, 'DEAD', `${cause} must set status = DEAD`);
+
+      // Invariant 2: death_record exists, matches cause, and is frozen
+      assert.ok(state.death_record !== null, `${cause} must generate death_record`);
+      assert.equal(state.death_record.primary_cause, cause, `${cause} primary_cause must match`);
+      assert.equal(typeof state.death_record.detailed_cause_narrative, 'string');
+      assert.ok(state.death_record.detailed_cause_narrative.length > 0);
+      assert.ok(Object.isFrozen(state.death_record), `${cause} death_record must be frozen`);
+      assert.ok(Object.isFrozen(state.death_record.parent_ids), `${cause} parent_ids must be frozen`);
+
+      // Invariant 3: Attempt to mutate death_record fails
+      assert.throws(() => {
+        'use strict';
+        state.death_record.primary_cause = 'MUTATED';
+      }, TypeError, `${cause} mutating frozen death_record must throw`);
+
+      // Invariant 4: Emitted terminal DEATH event
+      const deathEvent = result.events.find(e => e.event_type === 'DEATH');
+      assert.ok(deathEvent, `${cause} must emit DEATH event`);
+      assert.equal(deathEvent.payload.primary_cause, cause);
+
+      // Invariant 5: DEAD organism rejects any subsequent tick
+      assert.throws(() => {
+        executeTickPipeline(state, profile, {}, emitter);
+      }, Error, `${cause} dead organism must be non-tickable`);
+    }
+  });
+
+  test('Metabolic expenditure consumes configured motility_multiplier from species profile without hardcoded stage checks', () => {
+    // Stage EGG: configured motility_multiplier = 0.20
+    const stateEgg = createTestOrganism('STAGE_EGG', null);
+    stateEgg.nutrition_state.stored_energy = 100.0;
+    const emitterEgg = new LifecycleEventEmitter(stateEgg.simulation_seed, stateEgg.organism_id, stateEgg.species_id);
+
+    executeTickPipeline(stateEgg, profile, { deltaTime: 1.0 }, emitterEgg);
+    const eggDrain = 100.0 - stateEgg.nutrition_state.stored_energy;
+
+    // Stage LARVA: configured motility_multiplier = 1.00
+    const stateLarva = createTestOrganism('STAGE_LARVA', 'L1');
+    stateLarva.nutrition_state.stored_energy = 100.0;
+    const emitterLarva = new LifecycleEventEmitter(stateLarva.simulation_seed, stateLarva.organism_id, stateLarva.species_id);
+
+    // Ensure no resource intake for fair comparison
+    executeTickPipeline(stateLarva, profile, { deltaTime: 1.0, resources: [] }, emitterLarva);
+    const larvaDrain = 100.0 - stateLarva.nutrition_state.stored_energy;
+
+    // Ratio of drain should equal motility_multiplier ratio (0.20 / 1.00 = 0.20)
+    const ratio = eggDrain / larvaDrain;
+    assert.ok(Math.abs(ratio - 0.20) < 1e-4, `Expected ratio ~0.20, got ${ratio}`);
+  });
 });

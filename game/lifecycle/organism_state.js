@@ -190,8 +190,14 @@ export function assertStateInvariants(state, speciesProfile) {
   if (state.is_alive && state.status !== 'ALIVE') {
     throw new Error(`Inconsistent vitality state: is_alive is true but status is '${state.status}'`);
   }
-  if (!state.is_alive && state.death_record === null) {
-    throw new Error('Dead organism must possess an immutable death_record');
+  if (!state.is_alive) {
+    if (state.death_record === null) {
+      throw new Error('Dead organism must possess an immutable death_record');
+    }
+    const validCauses = ['STARVATION', 'DEVELOPMENTAL_FAILURE', 'ENVIRONMENTAL_FAILURE', 'OLD_AGE', 'CATASTROPHIC_EVENT'];
+    if (!validCauses.includes(state.death_record.primary_cause)) {
+      throw new Error(`Invalid death cause '${state.death_record.primary_cause}' in death_record`);
+    }
   }
 
   // Lifecycle Stage validity

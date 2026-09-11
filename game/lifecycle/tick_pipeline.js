@@ -137,8 +137,11 @@ export function executeTickPipeline(state, speciesProfile, tickInput, emitter) {
   // Temperature multiplier phi(T) clamped to [0.40, 2.50]
   const phiT = Math.max(0.40, Math.min(2.50, Math.pow(Q10_COEFF, (tempCelsius - T_REF) / 10.0)));
   const psiSenescence = state.physiological_modifiers.senescence_metabolic_modifier;
-  // Non-motile stages (EGG, PUPA) exhibit lower basal metabolic upkeep (quiescent factor 0.20)
-  const motilityMultiplier = currentStage.is_motile_stage ? 1.0 : 0.20;
+  // Stage-specific motility multiplier configured in species profile
+  // GAMEPLAY MODEL / PROTOTYPE CONSTANT: Quiescent stages specify 0.20, motile stages 1.00
+  const motilityMultiplier = typeof currentStage.motility_multiplier === 'number'
+    ? currentStage.motility_multiplier
+    : (typeof currentStage.metabolic_drain_multiplier === 'number' ? currentStage.metabolic_drain_multiplier : 1.0);
 
   const basalExpenditure = E_BASE_RATE * metabolicDrainIndex * Math.pow(massIndex, 0.75) * phiT * psiSenescence * motilityMultiplier * dt;
 
@@ -389,14 +392,62 @@ export function executeTickPipeline(state, speciesProfile, tickInput, emitter) {
   let deathCause = null;
   let narrative = '';
 
-  // Check Starvation Death
-  const starvationLimit = state.genetics.derived_stats.starvation_endurance_time || 100.0;
-  if (state.nutrition_state.starvation_ticks_elapsed >= starvationLimit || state.nutrition_state.structural_biomass <= 0.001) {
-    deathCause = 'STARVATION';
-    narrative = `Structural biomass exhausted after ${state.nutrition_state.starvation_ticks_elapsed} ticks of acute starvation.`;
+  // 1. CATASTROPHIC_EVENT (Generic external event input or catastrophic environmental trauma)
+  if (
+    tickInput.catastrophic_event ||
+    tickInput.catastrophicEvent ||
+    (Array.isArray(tickInput.external_events) && tickInput.external_events.some(e => e && (e.type === 'CATASTROPHIC_EVENT' || e.is_catastrophic))) ||
+    (Array.isArray(tickInput.externalEvents) && tickInput.externalEvents.some(e => e && (e.type === 'CATASTROPHIC_EVENT' || e.is_catastrophic))) ||
+    state.environment_state.environmental_hazard_rating >= 1.0
+  ) {
+    deathCause = 'CATASTROPHIC_EVENT';
+    const detail = (typeof tickInput.catastrophic_event === 'object' && tickInput.catastrophic_event !== null)
+      ? (tickInput.catastrophic_event.narrative || tickInput.catastrophic_event.reason || 'Overwhelming external trauma.')
+      : ((typeof tickInput.catastrophicEvent === 'object' && tickInput.catastrophicEvent !== null)
+        ? (tickInput.catastrophicEvent.narrative || tickInput.catastrophicEvent.reason || 'Overwhelming external trauma.')
+        : (state.environment_state.environmental_hazard_rating >= 1.0 ? 'Overwhelming environmental hazard destruction.' : 'Overwhelming external trauma.'));
+    narrative = `Catastrophic fatality: ${detail}`;
   }
 
-  // Check Environmental Lethality
+  // 2. DEVELOPMENTAL_FAILURE (Generic developmental arrest, failed molt/metamorphosis, or non-feeding energy exhaustion)
+  if (!deathCause) {
+    if (tickInput.developmental_failure || tickInput.developmentalFailure || tickInput.critical_molt_failure || tickInput.criticalMoltFailure) {
+      deathCause = 'DEVELOPMENTAL_FAILURE';
+      const detail = (typeof tickInput.developmental_failure === 'object' && tickInput.developmental_failure !== null)
+        ? (tickInput.developmental_failure.narrative || tickInput.developmental_failure.reason || 'Lethal developmental arrest.')
+        : ((typeof tickInput.developmentalFailure === 'object' && tickInput.developmentalFailure !== null)
+          ? (tickInput.developmentalFailure.narrative || tickInput.developmentalFailure.reason || 'Lethal developmental arrest.')
+          : 'Lethal developmental arrest during morphogenesis.');
+      narrative = `Developmental failure: ${detail}`;
+    } else if (!currentStage.is_feeding_stage && currentStage.order < stages.length) {
+      // In non-feeding developmental stages, depletion of structural biomass/energy prior to eclosion is developmental failure
+      const starvationLimit = state.genetics.derived_stats.starvation_endurance_time || 100.0;
+      if (state.nutrition_state.starvation_ticks_elapsed >= starvationLimit || state.nutrition_state.structural_biomass <= 0.001) {
+        deathCause = 'DEVELOPMENTAL_FAILURE';
+        narrative = `Developmental failure: Metabolic energy exhaustion prior to adult eclosion in ${currentStage.stage_id}.`;
+      }
+    }
+  }
+
+  // 3. Direct / Forced Death Cause (Generic event input support for simulation drivers)
+  if (!deathCause && tickInput.force_death_cause) {
+    const validCauses = ['STARVATION', 'DEVELOPMENTAL_FAILURE', 'ENVIRONMENTAL_FAILURE', 'OLD_AGE', 'CATASTROPHIC_EVENT'];
+    if (validCauses.includes(tickInput.force_death_cause)) {
+      deathCause = tickInput.force_death_cause;
+      narrative = tickInput.force_death_narrative || `Direct terminal transition: ${deathCause}.`;
+    }
+  }
+
+  // 4. STARVATION (Feeding stages acute nutritional/biomass exhaustion)
+  if (!deathCause) {
+    const starvationLimit = state.genetics.derived_stats.starvation_endurance_time || 100.0;
+    if (state.nutrition_state.starvation_ticks_elapsed >= starvationLimit || state.nutrition_state.structural_biomass <= 0.001) {
+      deathCause = 'STARVATION';
+      narrative = `Structural biomass exhausted after ${state.nutrition_state.starvation_ticks_elapsed} ticks of acute starvation.`;
+    }
+  }
+
+  // 5. ENVIRONMENTAL_FAILURE (Lethal thermal shock or desiccation)
   if (!deathCause) {
     if (tempCelsius <= envProf.temperature_celsius.lethal_min || tempCelsius >= envProf.temperature_celsius.lethal_max) {
       deathCause = 'ENVIRONMENTAL_FAILURE';
@@ -407,7 +458,7 @@ export function executeTickPipeline(state, speciesProfile, tickInput, emitter) {
     }
   }
 
-  // Check Old Age Death
+  // 6. OLD_AGE (Chronological senescence beyond max adult duration)
   if (!deathCause && currentStage.order === stages.length) {
     const maxAdultTicks = currentStage.max_duration_ticks || 3000;
     if (state.stage_age_ticks >= maxAdultTicks) {
@@ -433,7 +484,7 @@ export function executeTickPipeline(state, speciesProfile, tickInput, emitter) {
       terminal_biomass: state.nutrition_state.structural_biomass,
       terminal_stored_energy: state.nutrition_state.stored_energy,
       terminal_stress_index: state.stress_state.chronic_stress,
-      parent_ids: []
+      parent_ids: Object.freeze([])
     });
 
     emitter.emit('DEATH', state.simulation_tick, state.current_stage_id, state.current_substage_id, {

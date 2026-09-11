@@ -94,6 +94,16 @@ for (const profilePath of profilePaths) {
       if (stage.max_duration_ticks !== null && stage.max_duration_ticks < stage.min_duration_ticks) {
         errors.push(`Stage '${stage.stage_id}' max_duration_ticks < min_duration_ticks`);
       }
+      if (stage.metabolic_drain_multiplier !== undefined) {
+        if (typeof stage.metabolic_drain_multiplier !== 'number' || stage.metabolic_drain_multiplier < 0) {
+          errors.push(`Stage '${stage.stage_id}' metabolic_drain_multiplier must be a non-negative number`);
+        }
+      }
+      if (stage.motility_multiplier !== undefined) {
+        if (typeof stage.motility_multiplier !== 'number' || stage.motility_multiplier < 0) {
+          errors.push(`Stage '${stage.stage_id}' motility_multiplier must be a non-negative number`);
+        }
+      }
 
       // Substages check
       if (Array.isArray(stage.substages)) {

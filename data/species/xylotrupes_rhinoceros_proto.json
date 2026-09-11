@@ -32,6 +32,8 @@
         "eta_lock_trigger": false,
         "min_duration_ticks": 250,
         "max_duration_ticks": 400,
+        "metabolic_drain_multiplier": 0.20,
+        "motility_multiplier": 0.20,
         "substages": [],
         "transition_conditions": {
           "required_thermal_sum": 250.0
@@ -54,6 +56,8 @@
         "eta_lock_trigger": false,
         "min_duration_ticks": 1500,
         "max_duration_ticks": 3500,
+        "metabolic_drain_multiplier": 1.00,
+        "motility_multiplier": 1.00,
         "substages": [
           {
             "substage_id": "L1",
@@ -103,6 +107,8 @@
         "eta_lock_trigger": true,
         "min_duration_ticks": 400,
         "max_duration_ticks": 800,
+        "metabolic_drain_multiplier": 0.20,
+        "motility_multiplier": 0.20,
         "substages": [],
         "transition_conditions": {
           "required_pupal_thermal_sum": 400.0,
@@ -127,6 +133,8 @@
         "eta_lock_trigger": false,
         "min_duration_ticks": 1000,
         "max_duration_ticks": 3000,
+        "metabolic_drain_multiplier": 1.00,
+        "motility_multiplier": 1.00,
         "substages": [],
         "transition_conditions": {},
         "failure_conditions": [
