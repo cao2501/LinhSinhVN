@@ -1,0 +1,10 @@
+{
+  "name": "linhsinhvn",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LinhSinhVN - Headless Deterministic Genetics Engine",
+  "scripts": {
+    "smoke": "node tools/smoke_check_genetics.js"
+  }
+}
