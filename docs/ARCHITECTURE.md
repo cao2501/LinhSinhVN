@@ -63,10 +63,12 @@ The system architecture enforces a strict unidirectional dependency hierarchy. H
 
 ### 2.4 CREATURE / LIFE CYCLE
 - **Responsibility:** Aggregate creature identity, generic lifecycle stage state machine (e.g., Egg, Larva, Pupa, Adult), substages/instars, molting/ecdysis resolution, chronological aging, and terminal mortality.
-- **Dependencies:** CORE, DATA.
+- **Form:** Headless deterministic runtime located in `game/lifecycle/` (`lifecycle_runtime.js`, `tick_pipeline.js`, `organism_state.js`, `profile_loader.js`, `event_emitter.js`, `state_snapshot.js`).
+- **Dependencies:** CORE, DATA (`data/species/`).
 
 ### 2.5 DEVELOPMENT
 - **Responsibility:** Tracking larval developmental plasticity, nutritional deficit accumulation, compensatory recovery, and the Developmental Realization Factor ($\eta \in [0.60, 1.00]$). Manages the irreversible morphological locking event at metamorphosis.
+- **Form:** Integrated within the generic 12-step deterministic pipeline in `game/lifecycle/tick_pipeline.js`.
 - **Dependencies:** CREATURE / LIFE CYCLE, CORE, DATA.
 
 ### 2.6 PHENOTYPE

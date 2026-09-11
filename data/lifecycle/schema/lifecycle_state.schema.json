@@ -93,25 +93,13 @@
     "physiological_modifiers": {
       "type": "object",
       "required": [
-        "senescence_metabolic_modifier",
-        "active_stamina",
-        "current_hp"
+        "senescence_metabolic_modifier"
       ],
       "properties": {
         "senescence_metabolic_modifier": {
           "type": "number",
           "minimum": 1.00,
           "description": "Physiological age multiplier elevating metabolic demand in elder adults"
-        },
-        "active_stamina": {
-          "type": "number",
-          "minimum": 0.0,
-          "description": "Immediate stamina reserve available for action execution"
-        },
-        "current_hp": {
-          "type": "number",
-          "minimum": 0.0,
-          "description": "Current physiological vitality / structural integrity"
         }
       },
       "additionalProperties": false
