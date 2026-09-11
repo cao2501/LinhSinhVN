@@ -1,29 +1,31 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "DerivedGameplayStats",
-  "description": "Functional gameplay stats calculated from phenotype attributes",
+  "description": "Functional gameplay stats calculated from phenotype attributes (Gameplay Model Constants)",
   "type": "object",
   "required": [
     "schema_version",
     "max_hp",
     "clash_power",
-    "armor_def",
-    "crawl_speed_cm_s",
+    "armor_reduction",
+    "crawl_speed",
     "max_stamina",
-    "stamina_regen_per_s",
+    "action_stamina_cost",
+    "stamina_regen_rate",
     "perception_radius",
-    "starvation_hours"
+    "starvation_endurance_time"
   ],
   "properties": {
     "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
     "max_hp": { "type": "number", "minimum": 1.0 },
     "clash_power": { "type": "number", "minimum": 0.0 },
-    "armor_def": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-    "crawl_speed_cm_s": { "type": "number", "minimum": 0.0 },
+    "armor_reduction": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "crawl_speed": { "type": "number", "minimum": 0.0 },
     "max_stamina": { "type": "number", "minimum": 0.0 },
-    "stamina_regen_per_s": { "type": "number", "minimum": 0.0 },
+    "action_stamina_cost": { "type": "number", "minimum": 0.0 },
+    "stamina_regen_rate": { "type": "number", "minimum": 0.0 },
     "perception_radius": { "type": "number", "minimum": 0.0 },
-    "starvation_hours": { "type": "number", "minimum": 0.0 }
+    "starvation_endurance_time": { "type": "number", "minimum": 0.0 }
   },
   "additionalProperties": false
 }

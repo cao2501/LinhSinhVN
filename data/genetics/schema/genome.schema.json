@@ -6,7 +6,7 @@
   "required": ["schema_version", "species_id", "loci"],
   "properties": {
     "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
-    "species_id": { "type": "string", "pattern": "^species_[a-z0-9_]+$" },
+    "species_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
     "loci": {
       "type": "object",
       "additionalProperties": {

@@ -1,329 +1,342 @@
 # LinhSinhVN — Genetics & Phenotype Technical Specification
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Phase:** Phase 0 — Foundation / Prototype Architecture  
-**Status:** Authoritative Specification  
+**Status:** Authoritative Specification (Corrected Baseline)  
 
 ---
 
-## 1. Architectural Principles
+## 1. Methodological Boundary & Architectural Principles
 
-The biological simulation adheres strictly to a deterministic unidirectional pipeline:
+### 1.1 Real Biology vs. Gameplay Model
+LinhSinhVN strictly enforces a fundamental separation between biological inspiration and the gameplay model:
+
+$$\text{REAL BIOLOGY (Inspiration / Qualitative Constraints)} \longrightarrow \text{GAMEPLAY MODEL (Deterministic Gameplay Constants)}$$
+
+- **Real Biology:** Informs qualitative anatomy, lifecycle stages, sexual dimorphism, and environmental adaptations. Real biological measurements are **not** claimed as verified scientific facts within this specification.
+- **Gameplay Model:** Defines explicit, deterministic numerical parameters, normalized bounds, and derived combat/survival formulas designed for game balance, testing, and determinism.
+- **Classification:** All numerical values, formulas, and ranges in this specification are designated strictly as **GAMEPLAY MODEL / PROTOTYPE CONSTANTS**.
+
+### 1.2 The Deterministic Simulation Pipeline
+The biological simulation adheres to an unyielding unidirectional pipeline:
 
 $$\text{GENOME} \longrightarrow \text{GENES} \longrightarrow \text{GENE EXPRESSION} \longrightarrow \text{PHENOTYPE} \longrightarrow \text{DERIVED STATS} \longrightarrow \text{SURVIVAL / COMBAT}$$
 
-### Core Invariants:
+### 1.3 Core Invariants
 1. **The Genome is Authoritative:** Stored genetic data consists strictly of allele pairs across defined loci.
-2. **Stats are Derived Values:** Gameplay stats (HP, ATK, DEF, SPD, STAMINA) are never stored as genetic values; they are dynamically computed from expressed phenotype attributes.
-3. **Phenotype is Derived from Genes:** Physical morphology (horn length, shell thickness, body scale) is calculated deterministically from gene expression.
+2. **Stats are Derived Values:** Gameplay stats (HP, Clash Power, Defense, Speed, Stamina) are never stored as genetic values; they are dynamically derived from expressed phenotype attributes.
+3. **Phenotype is Derived from Genes:** Physical morphology (body scale, shell density, horn scale) is computed deterministically from gene expression.
 4. **Strict Determinism:** Identical parental genomes + identical seed + identical environmental context = identical offspring.
-5. **No AI Game-State Mutation:** Language models or generative agents must never modify genomes, breeding outcomes, or derived stats.
-6. **No Arbitrary Stat Averaging:** Offspring do not average their parents' stats. They inherit discrete alleles through Mendelian segregation and recombination.
+5. **No AI Game-State Mutation:** Generative agents and LLMs must never modify genomes, breeding outcomes, or derived stats.
+6. **No Arbitrary Stat Averaging:** Offspring do not average their parents' stats. They inherit discrete alleles through Mendelian segregation.
 
 ---
 
-## 2. Allele Representation Model
+## 2. Allele Abstraction & Inheritance Model
 
-### 2.1 Model Evaluation
-We evaluate four potential allele architectures:
+### 2.1 Conceptual Abstraction Layer
+To ensure long-term modularity and avoid tightly coupling gameplay, rendering, or combat systems to raw floats, the architecture enforces a layered conceptual abstraction:
 
-| Architecture | Description | Pros | Cons | Verdict |
-| :--- | :--- | :--- | :--- | :--- |
-| **A. Simple Numeric Allele** | Single float per locus ($a \in [0.0, 1.0]$) | Extremely simple math | No diploid inheritance, no hidden recessive traits, no carrier states | **Rejected** (Too simplistic) |
-| **B. Discrete Categorical Allele** | Mendelian letters ($A/a$, $B/b$) | Pure discrete dominance | Cannot represent continuous allometric traits (e.g., millimeter horn growth) | **Rejected** (Too rigid) |
-| **C. Diploid Quantitative Pair** | Two continuous floats per locus ($[a_1, a_2], a_i \in [0.0, 1.0]$) | Full diploid inheritance, continuous phenotypic expression, carrier preservation | Slightly more math than single float | **Selected Baseline** |
-| **D. Chromosomal String Simulation** | Full bitstring with crossover loci distances | High biological fidelity | Excessive overengineering for Phase 0 | **Deferred** (Phase 2+) |
+```
+GENOME
+ └── Locus
+      ├── allele_a  (Maternal origin)
+      └── allele_b  (Paternal origin)
+           │
+           ▼
+   EXPRESSION RULE
+           │
+           ▼
+    EXPRESSED VALUE (Normalized intermediate scalar)
+           │
+           ▼
+       PHENOTYPE   (Realized morphology & physiology)
+           │
+           ▼
+     DERIVED STATS (Authoritative combat & survival values)
+```
 
-### 2.2 Selected Model: Diploid Continuous Quantitative Alleles
-Every locus contains an unordered pair of continuous alleles:
-$$\text{Locus} = [a_1, a_2], \quad a_1, a_2 \in [0.0, 1.0]$$
-- $a_1$: Maternal allele contribution.
-- $a_2$: Paternal allele contribution.
+- **Prototype Representation:** In Phase 0, each allele is implemented as a floating-point scalar normalized to $[0.0, 1.0]$.
+- **Decoupling Guarantee:** Downstream systems (presentation, combat, UI) interact exclusively with the `Phenotype` and `DerivedStats` layers. The internal allele representation can be refined in future phases without modifying external contracts.
 
-### 2.3 Definitions
-- **Locus:** A specific physical or functional slot within the species genome (e.g., `LOCUS_CHITIN_DENSITY`).
-- **Allele:** A normalized floating-point value $a \in [0.0, 1.0]$ representing the genetic magnitude of a trait variant.
-- **Genotype:** The complete collection of diploid allele pairs across all loci for a specific organism.
-- **Expressed Value ($V_{exp}$):** The intermediate scalar resulting from gene expression rules (additive codominance, dominance weight, or sex-linked masking).
-- **Phenotype Property:** A concrete physical or physiological trait (e.g., `chitin_thickness_mm = 0.85 mm`) mapped from the expressed value.
-- **Derived Stat:** A gameplay combat/survival number (e.g., `damage_reduction = 42%`) calculated from one or more phenotype properties.
+### 2.2 Diploid Independent-Locus Inheritance
+The prototype inheritance model is designated precisely as:
+**DIPLOID INDEPENDENT-LOCUS INHERITANCE**
+
+- **Scope:** Each locus contains exactly two alleles ($[a_1, a_2]$) segregating independently during reproduction (Mendelian independent assortment).
+- **Meiosis Boundary:** This mechanism is an algorithmic inheritance model, **not** a complete cytological simulation of biological meiosis.
+- **Roadmap:**
+  - *Phase 1 (Prototype):* Independent locus segregation.
+  - *Future Milestones:* Physical chromosome linkage maps, genetic linkage groups, and chiasmata crossover will be evaluated only if justified by gameplay depth.
 
 ---
 
-## 3. Prototype Loci Specification (*Xylotrupes gideon*)
+## 3. Prototype Loci Specification (`xylotrupes_rhinoceros_proto`)
+
+- **Internal Species Identifier:** `xylotrupes_rhinoceros_proto`
+- **Taxonomic Metadata:** *Xylotrupes gideon* complex (`PROVISIONAL — BIOLOGICAL VERIFICATION REQUIRED`)
 
 For the initial prototype, exactly **8 loci** are defined:
 
 ```
-┌─────────────────────────┬───────────────────────────────┬──────────────────────────────────────────┐
-│ Locus ID                │ Biological Role               │ Primary Phenotype Expression             │
-├─────────────────────────┼───────────────────────────────┼──────────────────────────────────────────┤
-│ LOCUS_BODY_SCALE        │ Overall organism body volume  │ body_length_mm, mass_grams               │
-│ LOCUS_CHITIN_DENSITY    │ Cuticle mineral matrix        │ exoskeleton_hardness_gpa, armor_rating   │
-│ LOCUS_CEPHALIC_HORN     │ Head horn prying lever        │ cephalic_horn_length_mm (Sex-masked)     │
-│ LOCUS_THORACIC_HORN     │ Pronotal arch fork            │ thoracic_horn_arch_mm (Sex-masked)       │
-│ LOCUS_TARSAL_CLAW       │ Pretarsal claw recurvature    │ substrate_grip_newtons, push_traction    │
-│ LOCUS_METABOLIC_RATE    │ Mitochondrial respiration     │ basal_metabolic_cost, starvation_rate    │
-│ LOCUS_CUTICLE_PIGMENT   │ Melanin & sclerotization      │ melanism_ratio, thermal_absorption       │
-│ LOCUS_ANTENNAL_CLUB     │ Lamellate olfactory sensors   │ pheromone_detection_radius_meters        │
-└─────────────────────────┴───────────────────────────────┴──────────────────────────────────────────┘
+┌────────────────────────────┬─────────────────────────────┬──────────────────────────────────────────┐
+│ Locus ID                   │ Biological Role             │ Primary Phenotype Expression             │
+├────────────────────────────┼─────────────────────────────┼──────────────────────────────────────────┤
+│ LOCUS_BODY_SCALE           │ General organism volume     │ body_scale_index, mass_index             │
+│ LOCUS_CHITIN_DENSITY       │ Cuticle sclerotization      │ cuticle_hardness_index, armor_resistance │
+│ LOCUS_CEPHALIC_HORN        │ Head prying horn lever      │ cephalic_horn_scale (Sex-masked)         │
+│ LOCUS_THORACIC_HORN        │ Pronotal arch fork          │ thoracic_horn_scale (Sex-masked)         │
+│ LOCUS_TARSAL_CLAW          │ Pretarsal hook recurvature  │ tarsal_grip_index, traction_factor       │
+│ LOCUS_METABOLIC_EFFICIENCY │ Energetic conversion thrift │ metabolic_drain_index, stamina_economy   │
+│ LOCUS_CUTICLE_PIGMENT      │ Melanin concentration       │ cuticle_pigment_ratio, thermal_absorb    │
+│ LOCUS_ANTENNAL_CLUB        │ Lamellate olfactory plates  │ sensory_range_units                      │
+└────────────────────────────┴─────────────────────────────┴──────────────────────────────────────────┘
 ```
 
-### Detailed Locus Profiles:
+### Detailed Locus Profiles (All values are Prototype Constants):
 
 #### 1. `LOCUS_BODY_SCALE`
-- **Allele Range:** $[0.0, 1.0]$ (Mapping to dwarf minor vs. major giant forms).
+- **Allele Range:** $[0.0, 1.0]$.
 - **Expression Rule:** Additive codominance: $V_{exp} = \frac{a_1 + a_2}{2}$.
-- **Phenotype Effect:** Determines `body_length_mm` ($35.0\text{ mm} \to 75.0\text{ mm}$) and `body_mass_g` ($10.0\text{ g} \to 40.0\text{ g}$).
-- **Stat Effect:** Directly scales `max_health` and `mass_knockback_resistance`.
-- **Trade-off:** High scale dramatically increases `basal_metabolic_cost` (requires much more food) and reduces turning agility.
+- **Phenotype Target:** `body_scale_index` ($0.70 \to 1.50$) and `mass_index` ($0.80 \to 2.20$).
+- **Stat Effect:** Directly scales `max_hp` and knockback resistance.
+- **Trade-off:** Larger body scale increases base metabolic drain and increases turning inertia.
 
 #### 2. `LOCUS_CHITIN_DENSITY`
 - **Allele Range:** $[0.0, 1.0]$.
 - **Expression Rule:** Incomplete dominance with positive reinforcement: $V_{exp} = 0.4 \min(a_1, a_2) + 0.6 \max(a_1, a_2)$.
-- **Phenotype Effect:** Determines `exoskeleton_thickness_mm` ($0.4\text{ mm} \to 1.8\text{ mm}$) and hardness index.
-- **Stat Effect:** Increases `defense_armor_value`.
-- **Trade-off:** Heavier shell adds weight penalty, reducing sprint acceleration.
+- **Phenotype Target:** `cuticle_hardness_index` ($1.0 \to 3.0$).
+- **Stat Effect:** Increases `armor_reduction` (damage soak).
+- **Trade-off:** High cuticle density adds structural weight to `mass_index`, reducing sprint acceleration.
 
 #### 3. `LOCUS_CEPHALIC_HORN`
 - **Allele Range:** $[0.0, 1.0]$.
 - **Expression Rule:** Sex-limited expression:
-  - If organism sex is `FEMALE`: $V_{exp} = 0.0$ (complete phenotypic suppression; alleles remain in genome and pass to progeny).
-  - If organism sex is `MALE`: $V_{exp} = \left(\frac{a_1 + a_2}{2}\right) \times \text{AllometricModifier}(\text{body\_scale})$.
-- **Phenotype Effect:** Determines `cephalic_horn_length_mm` ($0.0\text{ mm}$ for females; up to $45.0\text{ mm}$ for males).
-- **Stat Effect:** Determines `clash_lift_leverage` (offensive prying power in beetle wrestling).
-- **Trade-off:** Large horns incur structural weight and high stamina expenditure during attacks.
+  - If `FEMALE`: $V_{exp} = 0.0$ (complete phenotypic suppression; alleles remain intact in genome and pass to progeny).
+  - If `MALE`: $V_{exp} = \left(\frac{a_1 + a_2}{2}\right) \times \text{AllometricModifier}(\text{body\_scale\_index})$.
+- **Phenotype Target:** `cephalic_horn_scale` ($0.0$ for females; $0.20 \to 1.80$ for males).
+- **Stat Effect:** Scales `clash_power` (prying leverage in beetle wrestling).
+- **Trade-off:** High horn scale adds front-heavy balance drag and increases action stamina expenditure.
 
 #### 4. `LOCUS_THORACIC_HORN`
 - **Allele Range:** $[0.0, 1.0]$.
 - **Expression Rule:** Sex-limited expression:
   - If `FEMALE`: $V_{exp} = 0.0$.
   - If `MALE`: $V_{exp} = \frac{a_1 + a_2}{2}$.
-- **Phenotype Effect:** Determines `thoracic_horn_curvature_index` and clamping gap between upper and lower horn.
-- **Stat Effect:** Determines `pin_lock_strength` (ability to hold and flip opponent).
-- **Trade-off:** Increases front-heavy drag.
+- **Phenotype Target:** `thoracic_horn_scale` ($0.0$ for females; $0.20 \to 1.40$ for males).
+- **Stat Effect:** Modifies grapple clamping strength.
+- **Trade-off:** Adds minor forward mass burden.
 
 #### 5. `LOCUS_TARSAL_CLAW`
 - **Allele Range:** $[0.0, 1.0]$.
 - **Expression Rule:** Additive codominance: $V_{exp} = \frac{a_1 + a_2}{2}$.
-- **Phenotype Effect:** Determines `claw_hook_depth_microns` and micro-spine density on tibial joints.
-- **Stat Effect:** Direct modifier to `traction_grip` and resistance to being dislodged from tree bark.
-- **Trade-off:** High claw curvature slightly reduces crawling speed on smooth flat stone surfaces.
+- **Phenotype Target:** `tarsal_grip_index` ($0.80 \to 2.50$).
+- **Stat Effect:** Modifies `traction_grip` and push stability.
+- **Trade-off:** Very high claw recurvature slightly reduces crawl speed across smooth flat surfaces.
 
-#### 6. `LOCUS_METABOLIC_RATE`
+#### 6. `LOCUS_METABOLIC_EFFICIENCY`
 - **Allele Range:** $[0.0, 1.0]$.
-- **Expression Rule:** Non-linear metabolic curve: $V_{exp} = \frac{a_1 + a_2}{2}$.
-- **Phenotype Effect:** Efficiency of ATP/glycogen synthesis and fat reserves.
-- **Stat Effect:** High metabolic rate yields faster `stamina_recovery_rate`, while low metabolic rate extends `starvation_interval`.
-- **Trade-off:** Organisms with fast stamina regeneration must forage constantly or face rapid starvation.
+- **Expression Rule:** Additive codominance: $V_{exp} = \frac{a_1 + a_2}{2}$.
+- **Phenotype Target:** `metabolic_drain_index` ($0.60 \to 1.40$) and `stamina_economy_modifier` ($0.80 \to 1.30$).
+- **Stat Effect:** 
+  - Higher efficiency yields **lower** metabolic drain (slower starvation, reduced food consumption).
+  - Higher efficiency yields **better** stamina economy (lower stamina cost per combat action).
+  - Improves `starvation_endurance_time`.
+- **Trade-off:** High metabolic efficiency reduces rapid burst recovery (`stamina_regen_rate` is steady rather than explosive).
 
 #### 7. `LOCUS_CUTICLE_PIGMENT`
 - **Allele Range:** $[0.0, 1.0]$.
 - **Expression Rule:** Additive codominance: $V_{exp} = \frac{a_1 + a_2}{2}$.
-- **Phenotype Effect:** `cuticle_melanism_ratio` ($0.0 = \text{chestnut red-brown}$, $1.0 = \text{jet obsidian black}$).
-- **Stat Effect:** Affects solar thermal absorption and nocturnal camouflage. Darker morphs absorb heat faster in morning sun; lighter morphs resist overheating under midday sun.
-- **Trade-off:** Environmental context determines fitness.
+- **Phenotype Target:** `cuticle_pigment_ratio` ($0.0 = \text{chestnut brown}$, $1.0 = \text{jet black}$).
+- **Stat Effect:** Affects solar thermal absorption index. Darker carapaces warm up faster in cool morning hours; lighter carapaces resist overheating under intense sun.
+- **Trade-off:** Fitness is dictated by ambient environmental context.
 
 #### 8. `LOCUS_ANTENNAL_CLUB`
 - **Allele Range:** $[0.0, 1.0]$.
 - **Expression Rule:** Dominance of larger lamellae: $V_{exp} = 0.7 \max(a_1, a_2) + 0.3 \min(a_1, a_2)$.
-- **Phenotype Effect:** Expansion surface area of terminal antennal plates.
-- **Stat Effect:** Increases `olfactory_detection_radius` for locating rotting tree sap and receptive mates.
-- **Trade-off:** Delicate structures vulnerable to damage during abrasive head-to-head combat.
+- **Phenotype Target:** `sensory_range_units` ($15.0 \to 60.0$).
+- **Stat Effect:** Modifies `perception_radius` for locating food nodes and conspecifics.
+- **Trade-off:** Larger sensory clubs suffer higher damage vulnerability during frontal head clashing.
 
 ---
 
 ## 4. Recombination (Breeding Algorithm)
 
 ### 4.1 Principle
-During sexual reproduction, offspring inherit exactly one allele per locus from Parent A (Maternal) and one allele per locus from Parent B (Paternal).
+During sexual reproduction, offspring inherit exactly one allele per locus from Parent A (Maternal) and one allele per locus from Parent B (Paternal) via independent assortment.
 
 ### 4.2 Seed Derivation
-To guarantee absolute determinism and prevent replay tampering, the breeding RNG seed is derived via 64-bit cryptographic/hash combination:
+To guarantee absolute determinism, the breeding PRNG seed is derived via 64-bit cryptographic/hash combination:
 $$\text{BreedingSeed} = \text{Hash64}(\text{ParentA.id} \,\|\, \text{ParentB.id} \,\|\, \text{ParentA.generation} \,\|\, \text{BreedingNonce})$$
 
 ### 4.3 Pseudocode
 
 ```python
 class DiploidLocus:
-    allele_1: float  # Maternal
-    allele_2: float  # Paternal
+    allele_1: float  # Maternal origin
+    allele_2: float  # Paternal origin
 
 class Genome:
+    species_id: str
     loci: dict[str, DiploidLocus]
 
 def recombine_genome(parent_a: Genome, parent_b: Genome, rng: DeterministicRNG) -> Genome:
-    child_genome = Genome(loci={})
+    child_genome = Genome(species_id=parent_a.species_id, loci={})
     
-    # Iterate over all loci defined in species schema
     for locus_id in SPECIES_LOCI_REGISTRY:
         locus_a = parent_a.loci[locus_id]
         locus_b = parent_b.loci[locus_id]
         
-        # Segregation: 50% probability to pick allele_1 or allele_2 from Parent A
-        inherited_from_a = locus_a.allele_1 if rng.next_float() < 0.5 else locus_a.allele_2
+        # Segregation: 50% probability to inherit allele_1 or allele_2 from Parent A
+        inherited_a = locus_a.allele_1 if rng.next_float() < 0.5 else locus_a.allele_2
         
-        # Segregation: 50% probability to pick allele_1 or allele_2 from Parent B
-        inherited_from_b = locus_b.allele_1 if rng.next_float() < 0.5 else locus_b.allele_2
+        # Segregation: 50% probability to inherit allele_1 or allele_2 from Parent B
+        inherited_b = locus_b.allele_1 if rng.next_float() < 0.5 else locus_b.allele_2
         
         child_genome.loci[locus_id] = DiploidLocus(
-            allele_1=inherited_from_a,
-            allele_2=inherited_from_b
+            allele_1=inherited_a,
+            allele_2=inherited_b
         )
         
     return child_genome
 ```
-
-*Note on Genetic Linkage:* For the initial prototype, loci segregate independently (Mendel's second law). Chromosomal physical linkage maps and chiasmata crossover will be layered in Phase 2 without altering the locus interface.
 
 ---
 
 ## 5. Mutation System
 
 ### 5.1 Rules of Mutation
-1. **Separation from Recombination:** Mutation is a distinct second-pass operation executed after parental segregation.
-2. **Deterministic Mutation Rolls:** Mutation triggers are evaluated strictly against the deterministic RNG stream.
-3. **No Unbounded Spikes:** Alleles are mutated by a bounded delta $\Delta \sim \text{Uniform}(-\delta_{max}, +\delta_{max})$ and hard-clamped to $[0.0, 1.0]$.
-4. **No Free Lunches (Physiological Trade-offs):** Mutations that increase physical capacity automatically inherit the physiological costs defined in the phenotype and stat formulas.
+1. **Separation from Recombination:** Mutation is an independent second-pass operation executed after parental segregation.
+2. **Deterministic Mutation Rolls:** Mutation triggers are evaluated strictly against the deterministic PRNG stream.
+3. **Bounded Deltas:** Alleles mutate by a bounded delta $\Delta \sim \text{Uniform}(-\delta_{max}, +\delta_{max})$ and are hard-clamped to $[0.0, 1.0]$.
+4. **Physiological Trade-offs:** Advantageous phenotypic changes automatically incur the trade-offs hardcoded into the derived stat formulas.
 
-### 5.2 Mutation Parameters
-- `per_locus_mutation_rate` ($P_{mut}$): Default $0.05$ (5% chance per locus).
-- `max_mutation_delta` ($\delta_{max}$): Default $0.12$.
+### 5.2 Prototype Parameters (Gameplay Constants)
+- `per_locus_mutation_rate` ($P_{mut}$): $0.05$ (5% chance per allele).
+- `max_mutation_delta` ($\delta_{max}$): $0.12$.
 
 ### 5.3 Pseudocode
 
 ```python
-def apply_mutation(genome: Genome, rng: DeterministicRNG, p_mut: float = 0.05, delta_max: float = 0.12) -> tuple[Genome, list[MutationRecord]]:
+def apply_mutation(genome: Genome, rng: DeterministicRNG, p_mut: float = 0.05, delta_max: float = 0.12) -> tuple[Genome, list[dict]]:
     mutation_history = []
     
     for locus_id, locus in genome.loci.items():
         # Evaluate allele_1
         if rng.next_float() < p_mut:
             delta = (rng.next_float() * 2.0 - 1.0) * delta_max
-            original_val = locus.allele_1
-            locus.allele_1 = max(0.0, min(1.0, original_val + delta))
-            mutation_history.append(MutationRecord(locus_id, allele_index=1, old_val=original_val, new_val=locus.allele_1))
+            old_val = locus.allele_1
+            locus.allele_1 = max(0.0, min(1.0, old_val + delta))
+            mutation_history.append({"locus_id": locus_id, "allele_index": 1, "old": old_val, "new": locus.allele_1})
             
         # Evaluate allele_2
         if rng.next_float() < p_mut:
             delta = (rng.next_float() * 2.0 - 1.0) * delta_max
-            original_val = locus.allele_2
-            locus.allele_2 = max(0.0, min(1.0, original_val + delta))
-            mutation_history.append(MutationRecord(locus_id, allele_index=2, old_val=original_val, new_val=locus.allele_2))
+            old_val = locus.allele_2
+            locus.allele_2 = max(0.0, min(1.0, old_val + delta))
+            mutation_history.append({"locus_id": locus_id, "allele_index": 2, "old": old_val, "new": locus.allele_2})
             
     return genome, mutation_history
 ```
-
-### 5.4 Causal Chain Example
-1. Mutation event: During reproduction, `LOCUS_CEPHALIC_HORN` allele_2 experiences positive delta $+0.11$, shifting from $0.65 \to 0.76$.
-2. Gene expression: In a male offspring with `LOCUS_BODY_SCALE` expressed at $0.80$, the expressed horn index jumps from $0.62 \to 0.73$.
-3. Phenotype outcome: `cephalic_horn_length_mm` increases from $27.9\text{ mm} \to 32.8\text{ mm}$ (a massive visual and structural change).
-4. Stat consequence:
-   - `clash_lift_leverage` increases from $45 \to 58$ (+28% prying power).
-   - `horn_weight_penalty` increases mass burden, increasing `stamina_cost_per_clash` by +15%.
-   - Turning speed decreases by 5%.
 
 ---
 
 ## 6. Phenotype Mapping Layer
 
-The phenotype layer transforms expressed genetic values into concrete morphological and physiological properties.
+All values produced by this layer are **Gameplay Model Constants**:
 
 ```
-┌─────────────────────────────────┬───────────────────────────┬───────────────┬────────────────────────────────────────────────────────┐
-│ Phenotype Property              │ Source Loci               │ Unit / Range  │ Mapping Formula                                        │
-├─────────────────────────────────┼───────────────────────────┼───────────────┼────────────────────────────────────────────────────────┤
-│ body_length_mm                  │ BODY_SCALE                │ 35.0 – 75.0 mm│ 35.0 + (V_exp * 40.0)                                  │
-│ body_mass_grams                 │ BODY_SCALE, CHITIN        │ 10.0 – 45.0 g │ (10.0 + V_exp_body * 25.0) * (1.0 + V_exp_chitin * 0.2)│
-│ exoskeleton_hardness_gpa        │ CHITIN_DENSITY            │ 1.5 – 6.0 GPa │ 1.5 + (V_exp * 4.5)                                    │
-│ cephalic_horn_length_mm         │ CEPHALIC_HORN, BODY_SCALE │ 0.0 – 48.0 mm │ Male: (V_exp_horn^1.2) * 35.0 * (body_length / 55.0)   │
-│                                 │                           │               │ Female: 0.0                                            │
-│ thoracic_horn_arch_mm           │ THORACIC_HORN, BODY_SCALE │ 0.0 – 30.0 mm │ Male: V_exp_thoracic * 22.0 * (body_length / 55.0)     │
-│                                 │                           │               │ Female: 0.0                                            │
-│ tarsal_grip_newtons             │ TARSAL_CLAW, BODY_SCALE   │ 0.5 – 3.5 N   │ 0.5 + (V_exp_claw * 2.2) + (V_exp_body * 0.8)          │
-│ basal_metabolic_cost_cal_hr     │ METABOLIC_RATE, BODY_SCALE│ 2.0 – 12.0 cal│ 2.0 + (V_exp_meta * 4.0) + (body_mass_grams * 0.15)    │
-│ sensory_detection_radius_m      │ ANTENNAL_CLUB             │ 1.0 – 8.0 m   │ 1.0 + (V_exp_antennal * 7.0)                           │
-│ cuticle_melanism_ratio          │ CUTICLE_PIGMENT           │ 0.0 – 1.0     │ V_exp_pigment                                          │
-└─────────────────────────────────┴───────────────────────────┴───────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────────────┬───────────────────────────┬──────────────┬────────────────────────────────────────────────────────┐
+│ Phenotype Property        │ Source Loci               │ Game Units   │ Mapping Formula (Prototype Constants)                  │
+├───────────────────────────┼───────────────────────────┼──────────────┼────────────────────────────────────────────────────────┤
+│ body_scale_index          │ BODY_SCALE                │ 0.70 – 1.50  │ 0.70 + (V_exp * 0.80)                                  │
+│ mass_index                │ BODY_SCALE, CHITIN        │ 0.80 – 2.20  │ (0.80 + V_exp_body * 1.0) * (1.0 + V_exp_chitin * 0.2) │
+│ cuticle_hardness_index    │ CHITIN_DENSITY            │ 1.0 – 3.0    │ 1.0 + (V_exp * 2.0)                                    │
+│ cephalic_horn_scale       │ CEPHALIC_HORN, BODY_SCALE │ 0.0 – 1.80   │ Male: (V_exp_horn^1.2) * 1.50 * body_scale_index       │
+│                           │                           │              │ Female: 0.0                                            │
+│ thoracic_horn_scale       │ THORACIC_HORN, BODY_SCALE │ 0.0 – 1.40   │ Male: V_exp_thoracic * 1.20 * body_scale_index         │
+│                           │                           │              │ Female: 0.0                                            │
+│ tarsal_grip_index         │ TARSAL_CLAW, BODY_SCALE   │ 0.80 – 2.50  │ 0.80 + (V_exp_claw * 1.20) + (V_exp_body * 0.50)       │
+│ metabolic_drain_index     │ METABOLIC_EFFICIENCY, MASS│ 0.60 – 1.40  │ (1.40 - V_exp_eff * 0.60) * (mass_index^0.3)           │
+│ stamina_economy_modifier  │ METABOLIC_EFFICIENCY      │ 0.80 – 1.30  │ 0.80 + (V_exp_eff * 0.50)                              │
+│ sensory_range_units       │ ANTENNAL_CLUB             │ 15.0 – 60.0  │ 15.0 + (V_exp_antennal * 45.0)                         │
+│ cuticle_pigment_ratio     │ CUTICLE_PIGMENT           │ 0.0 – 1.0    │ V_exp_pigment                                          │
+└───────────────────────────┴───────────────────────────┴──────────────┴────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 7. Derived Gameplay Stats
 
-Gameplay stats are computed from the phenotype properties. **Never from raw genes directly.**
+Gameplay stats are computed exclusively from the phenotype layer:
 
-### 7.1 Stat Definitions & Formulas
+### 7.1 Formulas & Balances (Gameplay Model Constants)
 
 1. **Max Health (`max_hp`):**
-   $$\text{max\_hp} = 100 + (\text{body\_mass\_grams} \times 3.0) + (\text{exoskeleton\_hardness\_gpa} \times 12.0)$$
-   - *Baseline range:* $148 \to 307 \text{ HP}$.
+   $$\text{max\_hp} = 100.0 + (\text{mass\_index} \times 50.0) + (\text{cuticle\_hardness\_index} \times 20.0)$$
+   - *Baseline range:* $160 \to 270\text{ HP}$.
 2. **Clash Power (`clash_power`):**
-   $$\text{clash\_power} = (\text{cephalic\_horn\_length\_mm} \times 2.2) + (\text{tarsal\_grip\_newtons} \times 18.0)$$
-   - *Female baseline:* Driven primarily by claw grip ($9 \to 63$).
-   - *Male baseline:* Horn leverage + claw push ($9 \to 168$).
-3. **Damage Reduction (`armor_def`):**
-   $$\text{armor\_def} = \frac{\text{exoskeleton\_hardness\_gpa}}{6.0} \times 0.60 \quad (\text{yielding } 15\% \to 60\% \text{ passive damage soak})$$
-4. **Crawl Speed (`crawl_speed_cm_s`):**
-   $$\text{crawl\_speed} = \left(12.0 + \text{tarsal\_grip\_newtons} \times 2.5\right) \times \left(\frac{25.0}{\text{body\_mass\_grams}}\right)^{0.4}$$
-5. **Stamina Capacity (`max_stamina`):**
-   $$\text{max\_stamina} = 80.0 + (\text{body\_mass\_grams} \times 2.0) - (\text{cephalic\_horn\_length\_mm} \times 0.8)$$
-6. **Stamina Recovery Rate (`stamina_regen_per_s`):**
-   $$\text{stamina\_regen} = 4.0 + (\text{basal\_metabolic\_cost\_cal\_hr} \times 0.7)$$
-7. **Foraging Perception (`perception_radius`):**
-   $$\text{perception\_radius} = \text{sensory\_detection\_radius\_m}$$
-8. **Starvation Duration (`starvation_hours`):**
-   $$\text{starvation\_hours} = \frac{\text{body\_mass\_grams} \times 1.8}{\text{basal\_metabolic\_cost\_cal\_hr}}$$
+   $$\text{clash\_power} = (\text{cephalic\_horn\_scale} \times 50.0) + (\text{tarsal\_grip\_index} \times 25.0)$$
+   - *Female baseline:* Driven primarily by grip ($20 \to 62$).
+   - *Male baseline:* Horn leverage + claw push ($20 \to 152$).
+3. **Damage Reduction (`armor_reduction`):**
+   $$\text{armor\_reduction} = \frac{\text{cuticle\_hardness\_index} - 1.0}{2.0} \times 0.50 \quad (0\% \to 50\% \text{ soak})$$
+4. **Crawl Speed (`crawl_speed`):**
+   $$\text{crawl\_speed} = (10.0 + \text{tarsal\_grip\_index} \times 3.0) \times \left(\frac{1.0}{\text{mass\_index}}\right)^{0.35}$$
+5. **Max Stamina (`max_stamina`):**
+   $$\text{max\_stamina} = 80.0 + (\text{mass\_index} \times 25.0) - (\text{cephalic\_horn\_scale} \times 15.0)$$
+6. **Stamina Drain per Action (`action_stamina_cost`):**
+   $$\text{action\_stamina\_cost} = \frac{\text{base\_action\_cost}}{\text{stamina\_economy\_modifier}}$$
+7. **Stamina Recovery Rate (`stamina_regen_rate`):**
+   $$\text{stamina\_regen\_rate} = 5.0 + (\text{stamina\_economy\_modifier} \times 2.0)$$
+8. **Perception Radius (`perception_radius`):**
+   $$\text{perception\_radius} = \text{sensory\_range\_units}$$
+9. **Starvation Endurance (`starvation_endurance_time`):**
+   $$\text{starvation\_endurance\_time} = \frac{\text{mass\_index} \times 100.0}{\text{metabolic\_drain\_index}}$$
 
 ---
 
-## 8. Environmental Interaction & Phenotypic Plasticity
+## 8. Developmental Realization & Environmental Modifiers
 
-### 8.1 The Immutable Boundary
-$$\text{GENETIC VALUE} \neq \text{CURRENT CONDITION}$$
+### 8.1 The Immutable Separation
+$$\text{GENOME (Genetic Potential)} \neq \text{DEVELOPMENTAL MODIFIER} \neq \text{REALIZED PHENOTYPE}$$
 
-Environmental factors (temperature, humidity, larval nutrition, toxins) **never rewrite the organism's genome**.
+Under no circumstances do environmental stresses, nutritional deficits, or injuries mutate or rewrite the underlying genome.
 
-### 8.2 Expression Modification vs. Condition Scaling
-1. **Larval Nutrition (Developmental Plasticity):**
-   - During the larval/pupal stage, nutritional deficit sets a permanent `developmental_realization_factor` ($\eta \in [0.6, 1.0]$).
-   - In adult emergence:
-     $$\text{body\_length\_realized} = \text{body\_length\_genetic} \times \eta$$
-   - The *genome* remains $100\%$ untouched. If a starved dwarf adult breeds in optimal conditions, its progeny inherit full genetic potential.
-2. **Temperature on Cuticle Pigment (Current Condition):**
-   $$\text{effective\_body\_temp} = T_{ambient} + (\text{SolarRadiation} \times \text{cuticle\_melanism\_ratio} \times 4.5)$$
-   - High melanism in cool mountain mornings grants rapid warm-up to operating temperature.
-   - High melanism in scorching midday heat causes heat exhaustion debuffs unless shelter is found.
+### 8.2 Developmental Plasticity vs. Current Conditions
+1. **Developmental Conditions (`developmental_realization_factor`):**
+   - During the larval/pupal nymph stage, nutritional deficits register an irreversible environmental modifier ($\eta \in [0.60, 1.00]$).
+   - Upon adult emergence:
+     $$\text{body\_scale\_realized} = \text{body\_scale\_index} \times \eta$$
+   - The adult organism has a stunted physical phenotype, but its **genome retains 100% of its original genetic potential**. Progeny raised in abundant nutrition express full genetic size.
+2. **Current Environmental Conditions:**
+   - Ambient temperature, humidity, and solar radiation dynamically interact with `cuticle_pigment_ratio` to modify active movement and stamina efficiency without changing the underlying phenotype or genome.
 
 ---
 
-## 9. Emergent Evolution Architecture
+## 9. Evolution & Speciation Boundary
 
-### 9.1 Philosophy: No Pre-scripted Evolution Trees
-Evolution is an emergent macroscopic phenomenon resulting from generations of:
-$$\text{Recombination} + \text{Mutation} + \text{Environmental Selection} + \text{Genetic Drift}$$
+### 9.1 Conceptual Architecture
+Evolution in LinhSinhVN is strictly emergent and non-linear. The game does **not** feature level-based evolution trees.
 
-### 9.2 Future Mechanics Enabled by this Genome
-1. **Speciation Distance ($\Delta G$):**
-   The Euclidean genetic distance between an organism's locus values and an ancestral centroid:
-   $$\Delta G = \sqrt{\sum_{i=1}^{N} (V_{exp, i} - V_{archetype, i})^2}$$
-2. **Adaptive Branching:**
-   When a sub-population survives in extreme subterranean caves over 10 generations, selection weeds out large horns and high vision, favoring compact bodies, enhanced antennae, and reduced pigmentation. The game designates this lineage as a recognized emergent subspecies (e.g., *Xylotrupes gideon cavernicola*).
-3. **Zero Level-Up Evolutions:**
-   Creatures do not evolve into new species at "Level 16". Speciation occurs strictly across generational lineage transitions.
+$$\text{GENETIC DIVERGENCE} \longrightarrow \text{Possible Lineage Differentiation Signal} \longrightarrow \text{Future Evolution System}$$
+
+### 9.2 Boundary Invariants:
+1. **Genetic Distance Does NOT Automatically Equal Speciation:** The Euclidean genetic divergence ($\Delta G$) across loci is an analytical tracking metric, not an instant speciation trigger.
+2. **Speciation is Deferred:** Mechanics governing speciation thresholds, reproductive isolation barriers, and subspecies classification are reserved for future ecosystem milestones. The Phase 0 genome schema is designed to support lineage tracking without imposing premature taxonomic boundaries.
 
 ---
 
-## 10. Lineage Identity Model
+## 10. Lineage Record Contract
 
-To trace lineages across generations, each organism carries a persistent lineage manifest:
+Lineage records store generational history and provenance without altering genomic schemas:
 
 ```json
 {
   "$schema": "lineage_record.schema.json",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "organism_id": "org_xyd_gen04_0087",
-  "species_id": "species_xylotrupes_gideon",
+  "species_id": "xylotrupes_rhinoceros_proto",
   "generation": 4,
   "sex": "MALE",
   "parent_ids": {

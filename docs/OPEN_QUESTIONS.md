@@ -6,8 +6,8 @@
 ---
 
 ### 1. Protagonist & Species Taxonomy
-- **Exact protagonist species [PROVISIONALLY RESOLVED FOR PROTOTYPE]:** *Xylotrupes gideon* complex (Kiến vương hai sừng / Siamese rhinoceros beetle) provisionally selected for the initial prototype slice. See [docs/PROTOTYPE_SPECIES.md](file:///d:/LinhSinhVN/docs/PROTOTYPE_SPECIES.md).
-  - *Remaining Biological Verification:* Confirm regional Indochinese taxonomy differentiation between *Xylotrupes gideon* and *Xylotrupes socrates*.
+- **Exact protagonist species [PROVISIONALLY RESOLVED FOR PROTOTYPE]:** Internal prototype identifier `xylotrupes_rhinoceros_proto` provisionally selected for the initial vertical prototype slice. Scientific metadata recorded as *Xylotrupes gideon* complex (`PROVISIONAL — BIOLOGICAL VERIFICATION REQUIRED`). See [docs/PROTOTYPE_SPECIES.md](file:///d:/LinhSinhVN/docs/PROTOTYPE_SPECIES.md).
+  - *Remaining Biological Verification:* Confirmation of regional Indochinese taxonomy differentiation between *Xylotrupes gideon* and *Xylotrupes socrates*. The internal game ID isolates the codebase from taxonomy debates.
 - **Insect vs. other small animal:** Focus locked to indigenous Vietnamese Coleoptera for the foundation prototype slice. Secondary branches (Mantodea, Scorpiones, small amphibians) deferred to post-prototype milestones.
 
 ### 2. Art Direction & Visual Identity
@@ -16,9 +16,12 @@
 - **Phenotype visualization:** Modular 2D sprite layering selected in principle for *Xylotrupes* (independent cephalic horn, thoracic pronotum, and abdomen/elytra components). Precise asset pipeline and shader recoloring specifications remain open.
 
 ### 3. Genetics & Biological Simulation
-- **Exact genome model [RESOLVED FOR PHASE 0]:** Diploid quantitative continuous allele pairs $[a_1, a_2] \in [0.0, 1.0]$ across 8 defined loci. See [docs/GENETICS_SPEC.md](file:///d:/LinhSinhVN/docs/GENETICS_SPEC.md).
+- **Exact genome model [RESOLVED FOR PHASE 0]:** Diploid quantitative continuous allele pairs $[a_1, a_2] \in [0.0, 1.0]$ across 8 defined loci. All values classified as **Gameplay Model / Prototype Constants**. See [docs/GENETICS_SPEC.md](file:///d:/LinhSinhVN/docs/GENETICS_SPEC.md).
+- **Inheritance paradigm [RESOLVED FOR PHASE 0]:** Diploid Independent-Locus Inheritance. Chromosome linkage maps and crossover deferred to future milestones.
+- **Metabolic model [RESOLVED FOR PHASE 0]:** `LOCUS_METABOLIC_EFFICIENCY` governing metabolic drain index, stamina economy, and starvation endurance.
 - **Allele structure [RESOLVED FOR PHASE 0]:** Additive codominance default with sex-limited masking for horn allometry.
 - **Mutation model [RESOLVED FOR PHASE 0]:** Bounded continuous delta ($\Delta \sim \text{Uniform}(-\delta_{max}, +\delta_{max})$) clamped to $[0.0, 1.0]$ with physiological trade-off coupling.
+- **Speciation boundary [RESOLVED FOR PHASE 0]:** Genetic distance does **not** automatically equal speciation. Speciation mechanics deferred to future ecosystem phase.
 - **Cross-species breeding rules [RESOLVED FOR PHASE 0]:** Strictly conspecific reproduction during Phase 0 prototype. Hybridization rules deferred to multi-species ecosystem phase.
 
 ### 4. Gameplay & Survival Loop

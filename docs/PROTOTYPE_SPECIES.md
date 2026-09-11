@@ -1,99 +1,82 @@
 # LinhSinhVN — Prototype Species Evaluation & Selection
 
 **Phase:** Phase 0 — Foundation  
-**Document Status:** PROVISIONAL SPECIFICATION (Requires Biological Verification)  
+**Document Status:** PROVISIONAL — BIOLOGICAL VERIFICATION REQUIRED  
 **Target Focus:** First Vertical Prototype Slice  
 
 ---
 
-## 1. Evaluation Context & Criteria
+## 1. Evaluation Context & Methodological Boundary
 
-To validate the core biological pipeline:
-$$\text{GENOME} \to \text{GENES} \to \text{EXPRESSION} \to \text{PHENOTYPE} \to \text{DERIVED STATS} \to \text{BREEDING}$$
+### 1.1 Real Biology vs. Gameplay Model
+LinhSinhVN enforces a strict conceptual distinction:
+$$\text{REAL BIOLOGY (Inspiration / Qualitative Constraints)} \longrightarrow \text{GAMEPLAY MODEL (Deterministic Gameplay Constants)}$$
 
-The prototype species must satisfy rigorous mechanical and production criteria:
-1. **Morphological Legibility:** Distinct, exaggerated anatomical features visible at small 2D sprite resolutions.
+- **Real Biology:** Informs qualitative anatomical relationships, life cycles, sexual dimorphism, and environmental context. We do **not** claim exact biological field measurements or peer-reviewed biometric datasets for the prototype species.
+- **Gameplay Model:** Defines explicit, deterministic numerical parameters, normalized bounds, and derived combat/survival formulas designed for game balance and verification.
+
+### 1.2 Prototype Evaluation Criteria
+1. **Morphological Legibility:** Distinct, exaggerated anatomical features recognizable in a 2D top-down view.
 2. **Sexual Dimorphism:** Clear differential gene expression between sexes to validate conditional phenotypic masking.
-3. **Continuous Phenotypic Variation:** Anatomy that allows observable scalar variation (e.g., horn curvature, cuticle shine, carapace width) without demanding complete animation re-rigging.
-4. **Cultural & Ecological Resonance:** Deeply indigenous to Vietnam and recognizable in Vietnamese folklore or everyday nature.
-5. **Simplicity of Movement in 2D:** Crawling, gripping, and pushing dynamics that can be expressed with minimal sprite frames rather than complex multi-jointed martial maneuvers.
+3. **Continuous Phenotypic Variation:** Anatomy allowing observable scalar changes (e.g., horn curvature, shell proportion) without requiring hundreds of hand-crafted animation frames.
+4. **Cultural & Ecological Resonance:** Familiarity within Vietnamese rural traditions, folklore, or micro-habitats.
+5. **Production Feasibility:** Locomotion and clashing dynamics achievable with modular sprite layering.
 
 ---
 
 ## 2. Candidate Evaluation
 
-### Candidate 1: Kiến vương hai sừng (Siamese Rhinoceros Beetle)
-- **Scientific Name:** *Xylotrupes gideon* (taxon complex, including *Xylotrupes socrates*)
-- **Taxonomy:** Order: Coleoptera; Family: Scarabaeidae; Subfamily: Dynastinae
-- **Habitat in Vietnam:** Lowland rainforests, bamboo groves, tropical orchards, decaying humus layers across Northern, Central, and Southern Vietnam.
+### Candidate 1: Kiến vương hai sừng (Rhinoceros Beetle Prototype)
+- **Internal Prototype ID:** `xylotrupes_rhinoceros_proto`
+- **Scientific Name (Metadata):** *Xylotrupes gideon* complex (provisional grouping including *Xylotrupes socrates*)
+- **Taxonomy (Qualitative):** Order: Coleoptera; Family: Scarabaeidae; Subfamily: Dynastinae
+- **Observed Habitat Context:** Tropical lowland foliage, bamboo stands, rotting wood/humus substrate across Indochina.
 - **Why Suitable:**
   - Iconic Vietnamese childhood association with beetle wrestling (*chọi kiến vương* / *chọi bọ hung*).
-  - Extreme, legible sexual dimorphism: Males possess massive bifurcated cephalic and thoracic horns used as prying levers; females lack horns entirely and exhibit compact, armored oval carapaces.
-  - Rigid exoskeleton allows modular sprite compositing: Head horn, thoracic shield, and elytra can be layered and scaled via 2D transforms without breaking joint continuity.
-  - Natural combat loop based on pushing, prying, and dislodging opponents rather than complex projectile or slashing attacks.
-- **Important Visible Traits:** Cephalic horn length/bifurcation, thoracic horn arch, elytra sheen (chestnut brown to obsidian black), body girth, tarsal leg spines.
-- **Useful Genetic Traits for Prototype:**
-  - Horn scale locus (continuous quantitative expression in males, masked in females).
-  - Chitin thickness locus (defensive density and weight).
-  - Tarsal claw grip locus (leverage and traction on bark).
-  - Body mass scale locus (metabolic cost vs. momentum).
-- **Major Implementation Difficulty:** Ensuring modular 2D sprite components (horn, pronotum, elytra) align seamlessly when scaling dynamically based on phenotype values.
+  - Extreme, legible sexual dimorphism: Males possess pronounced bifurcated cephalic and thoracic horns used as prying levers; females lack horns entirely, exhibiting compact oval carapaces.
+  - Exoskeletal structure lends itself to modular 2D sprite layering (independent head horn, pronotum, and elytra) and dynamic scaling.
+  - Core combat loop is physical grappling (prying leverage, traction, dislodging) rather than high-frame-rate martial arts.
+- **Qualitative Biological Traits:** Cephalic horn development, thoracic horn arch, elytral pigmentation (chestnut brown to black), body mass, pretarsal claw grip.
+- **Prototype Loci Mapping:** Horn scale locus (sex-masked in females), cuticle density locus, tarsal grip locus, metabolic efficiency locus.
+- **Implementation Trade-offs:** Modular 2D sprite components must align dynamically across scale variations without seam gaps.
 - **Recommendation:** **Primary Choice (Top Candidate).**
 
 ---
 
 ### Candidate 2: Bọ ngựa xanh châu Á (Asian Mantis)
-- **Scientific Name:** *Hierodula patellifera*
-- **Taxonomy:** Order: Mantodea; Family: Mantidae
-- **Habitat in Vietnam:** Gardens, scrubland, rainforest margins, agricultural foliage across all regions.
-- **Why Suitable:**
-  - High public recognition as a supreme insect predator.
-  - Distinct hunting posture (folded raptorial forelegs, triangular swivel head).
-  - Dynamic coloration polymorphism (leaf green to bark brown variants).
-- **Important Visible Traits:** Raptorial foreleg spines, pronotum length, compound eye size, camouflage coloration.
-- **Useful Genetic Traits for Prototype:** Strike speed, binocular visual range, camouflage index, foreleg reach.
-- **Major Implementation Difficulty:**
-  - High animation overhead: Striking, grasping, grooming, and walking require multi-jointed Inverse Kinematics or dozens of hand-drawn frames.
-  - Phenotypic scaling (e.g., longer forelegs) disrupts hitboxes and attack reach unless rigs are completely dynamic.
-- **Recommendation:** Deferred. Excellent second-generation predator, but too animation-heavy for the isolated genetics prototype.
+- **Scientific Name (Metadata):** *Hierodula patellifera*
+- **Taxonomy (Qualitative):** Order: Mantodea; Family: Mantidae
+- **Observed Habitat Context:** Garden shrubbery, rainforest margins across Vietnam.
+- **Why Suitable:** High recognition as an apex insect ambush predator with mobile head articulation and raptorial forelegs.
+- **Major Implementation Difficulty:** High animation overhead. Striking, grabbing, and multi-jointed leg articulation require dynamic inverse kinematics or extensive sprite sets.
+- **Recommendation:** Deferred to subsequent predatory milestones.
 
 ---
 
 ### Candidate 3: Bọ cạp rừng Đông Dương (Asian Forest Scorpion)
-- **Scientific Name:** *Heterometrus laoticus* / *Heterometrus silenus*
-- **Taxonomy:** Class: Arachnida; Order: Scorpiones; Family: Scorpionidae
-- **Habitat in Vietnam:** Forest leaf litter, burrowing under decaying logs in Central and Southern tropical forests.
-- **Why Suitable:**
-  - Heavily armored, intimidating presence.
-  - Dual physical/chemical attack modes (massive pedipalp chelae claws vs. venomous telson sting).
-- **Important Visible Traits:** Chela width, metasoma (tail) curvature and thickness, telson sting size, pectine sensory organs.
-- **Useful Genetic Traits for Prototype:** Claw grip power vs. venom yield/toxicity trade-off; burrowing efficiency vs. surface sprint speed.
-- **Major Implementation Difficulty:**
-  - Segmented tail physics/curling requires specialized multi-segment animation.
-  - Introduces venom potency, chemical metabolism, and status effects into combat before base physical clashing is verified.
-- **Recommendation:** Deferred. Strong future candidate for predatory/arachnid branch.
+- **Scientific Name (Metadata):** *Heterometrus laoticus* / *Heterometrus silenus*
+- **Taxonomy (Qualitative):** Class: Arachnida; Order: Scorpiones; Family: Scorpionidae
+- **Observed Habitat Context:** Forest leaf litter, burrowing under decaying logs in Central/Southern Vietnam.
+- **Why Suitable:** Armored presence, dual physical (chelae claws) and chemical (venom telson) attack modes.
+- **Major Implementation Difficulty:** Multi-segmented tail animation complexity and premature introduction of venom toxicity balances before basic physical push mechanics are proven.
+- **Recommendation:** Deferred to subsequent predator milestones.
 
 ---
 
 ## 3. Comparative Matrix
 
-| Evaluation Criterion | *Xylotrupes gideon* (Kiến vương) | *Hierodula patellifera* (Bọ ngựa) | *Heterometrus laoticus* (Bọ cạp) |
+| Evaluation Criterion | *Xylotrupes* Prototype | Mantis (*Hierodula*) | Scorpion (*Heterometrus*) |
 | :--- | :--- | :--- | :--- |
-| **Cultural Resonance in VN** | ⭐⭐⭐⭐⭐ (Folk games/childhood) | ⭐⭐⭐⭐ (Recognized predator) | ⭐⭐⭐ (Known wilderness hazard) |
-| **Morphological Legibility** | ⭐⭐⭐⭐⭐ (Huge dual horns & shell) | ⭐⭐⭐⭐ (Thin limbs, mantis head) | ⭐⭐⭐⭐⭐ (Massive claws & tail) |
-| **Sexual Dimorphism** | ⭐⭐⭐⭐⭐ (Dramatic horn masking) | ⭐⭐ (Subtle abdomen/wing size) | ⭐⭐ (Pectine teeth count, subtle) |
-| **Phenotype Scaling in 2D** | ⭐⭐⭐⭐⭐ (Rigid modular shells) | ⭐⭐ (Complex leg joint rigs) | ⭐⭐⭐ (Segmented tail complexity) |
-| **Minimal Animation Cost** | ⭐⭐⭐⭐ (Crawling & horn prying) | ⭐ (Fast strikes & folded legs) | ⭐⭐ (Segmented stinging sweep) |
-| **Biological Credibility** | ⭐⭐⭐⭐⭐ (Well-studied allometry) | ⭐⭐⭐⭐ (Classic ambush biology) | ⭐⭐⭐⭐ (Well-studied venomology) |
+| **Cultural Resonance in VN** | ⭐⭐⭐⭐⭐ (Traditional beetle clashing) | ⭐⭐⭐⭐ (Recognized predator) | ⭐⭐⭐ (Known wilderness hazard) |
+| **Morphological Legibility** | ⭐⭐⭐⭐⭐ (Dual horns & armored shell) | ⭐⭐⭐⭐ (Slender body, folded legs) | ⭐⭐⭐⭐⭐ (Massive pincers & tail) |
+| **Sexual Dimorphism** | ⭐⭐⭐⭐⭐ (Distinct male horn masking) | ⭐⭐ (Subtle body size difference) | ⭐⭐ (Pectine teeth count, subtle) |
+| **2D Modular Scaling** | ⭐⭐⭐⭐⭐ (Rigid segmented shells) | ⭐⭐ (Complex joint deformation) | ⭐⭐⭐ (Curved segmented tail) |
+| **Animation Overhead** | ⭐⭐⭐⭐ (Crawling & horn prying) | ⭐ (Fast multi-frame strikes) | ⭐⭐ (Segmented stinging sweep) |
 
 ---
 
-## 4. Decision: Selected Prototype Species
+## 4. Selection & Architectural Binding
 
-**Selected Species:** **Kiến vương hai sừng (*Xylotrupes gideon* / *Xylotrupes socrates*)**  
-**Classification:** **PROVISIONAL — REQUIRES BIOLOGICAL VERIFICATION**
-
-### Verification Notes:
-- In contemporary entomological literature, the Indochinese rhinoceros beetle previously classified broadly as *Xylotrupes gideon* is often differentiated as *Xylotrupes socrates* or regional subspecies within the *Xylotrupes* complex.
-- For prototype simulation and data design, we establish the base taxon identifier as `species_xylotrupes_gideon` with explicit support for allometric horn scaling and modular sex dimorphism.
-- If scientific consensus confirms *Xylotrupes socrates* as the dominant regional taxon in Vietnam, the taxon ID can be updated in `data/species/` without requiring any changes to the genome schema or underlying simulation code.
+- **Internal Species Identifier:** `xylotrupes_rhinoceros_proto`
+- **Taxonomic Status:** **PROVISIONAL — BIOLOGICAL VERIFICATION REQUIRED**
+- **Taxonomy Note:** Regional Indochinese populations of the *Xylotrupes* genus contain taxonomic nuance between *X. gideon* and *X. socrates*. The internal ID `xylotrupes_rhinoceros_proto` isolates the simulation and data schemas from unresolved scientific debates. The game model draws qualitative morphological inspiration from these beetles while running entirely on decoupled gameplay constants.

@@ -15,7 +15,7 @@
   "properties": {
     "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
     "organism_id": { "type": "string" },
-    "species_id": { "type": "string" },
+    "species_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
     "generation": { "type": "integer", "minimum": 0 },
     "sex": { "type": "string", "enum": ["MALE", "FEMALE"] },
     "parent_ids": {

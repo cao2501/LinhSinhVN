@@ -8,14 +8,19 @@
     "species_id",
     "scientific_name",
     "common_name_vi",
+    "status",
     "taxonomy",
     "supported_loci"
   ],
   "properties": {
     "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
-    "species_id": { "type": "string", "pattern": "^species_[a-z0-9_]+$" },
+    "species_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
     "scientific_name": { "type": "string" },
     "common_name_vi": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["PROVISIONAL — BIOLOGICAL VERIFICATION REQUIRED", "VERIFIED"]
+    },
     "taxonomy": {
       "type": "object",
       "required": ["order", "family"],

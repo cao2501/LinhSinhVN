@@ -1,6 +1,6 @@
 # LinhSinhVN — Genetics Determinism & Specification Test Cases
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Phase:** Phase 0 — Foundation / Specification  
 **Status:** Verification Baseline for Future Implementation  
 
@@ -9,11 +9,14 @@
 ## Overview
 These test cases define the exact behavioral contracts that any future implementation of the Genetics, Phenotype, and Breeding subsystems must satisfy. Every test is designed to run in a headless, deterministic test harness.
 
+All numerical outputs and bounds in these test cases are evaluated against **Gameplay Model / Prototype Constants**.
+
 ---
 
 ### TC-GEN-01: Absolute Recombination Determinism
 - **Category:** Determinism
-- **Description:** Verifies that identical parents bred with an identical PRNG seed produce exactly identical offspring genomes and phenotypes.
+- **Inheritance Paradigm:** Diploid Independent-Locus Inheritance
+- **Description:** Verifies that identical parents bred with an identical PRNG seed produce exactly identical offspring genomes, phenotypes, and derived stats.
 - **Inputs:**
   - `Parent A`: Genome $G_A$
   - `Parent B`: Genome $G_B$
@@ -31,6 +34,7 @@ These test cases define the exact behavioral contracts that any future implement
 
 ### TC-GEN-02: Seed Sensitivity & Independent Assortment
 - **Category:** Segregation
+- **Inheritance Paradigm:** Diploid Independent-Locus Inheritance
 - **Description:** Verifies that changing the PRNG seed produces different valid Mendelian assortments without violating parental allele constraints.
 - **Inputs:**
   - `Parent A`: $L_1 = [0.20, 0.80]$
@@ -116,8 +120,8 @@ These test cases define the exact behavioral contracts that any future implement
   1. Calculate phenotype for $M_1$ (`sex = MALE`).
   2. Calculate phenotype for $F_1$ (`sex = FEMALE`).
 - **Expected Outcome:**
-  - $M_1$: `cephalic_horn_length_mm` $> 30.0\text{ mm}$, `clash_power` $> 90$.
-  - $F_1$: `cephalic_horn_length_mm == 0.0\text{ mm}`, `clash_power` driven solely by claw grip.
+  - $M_1$: `cephalic_horn_scale` $> 1.0$, `clash_power` $> 80.0$.
+  - $F_1$: `cephalic_horn_scale == 0.0`, `clash_power` driven solely by claw grip.
   - $F_1$'s stored genome retains `LOCUS_CEPHALIC_HORN = [0.85, 0.90]`.
   - When $F_1$ breeds with a hornless male, male offspring express the horn inherited from $F_1$.
 
@@ -125,15 +129,15 @@ These test cases define the exact behavioral contracts that any future implement
 
 ### TC-GEN-08: Environmental Decoupling (Genotype Protection)
 - **Category:** Environmental Interaction
-- **Description:** Verifies that severe environmental deficits (e.g., larval starvation or thermal stress) modify realized phenotype attributes without altering the underlying genome.
+- **Description:** Verifies that severe environmental deficits (e.g., larval starvation) modify realized phenotype attributes without altering the underlying genome.
 - **Inputs:**
   - Organism $O_{starved}$ undergoing severe larval starvation (`developmental_realization_factor = 0.65`).
   - Baseline unstarved adult organism $O_{normal}$ with identical genome.
 - **Steps:**
   1. Express adult phenotypes.
-  2. Compare adult `body_length_mm` and `body_mass_grams`.
+  2. Compare adult `body_scale_index` and derived `mass_index`.
   3. Compare underlying `Genome` objects.
 - **Expected Outcome:**
-  - $O_{starved}$ expresses significantly reduced physical dimensions (`body_length_mm` is reduced by $35\%$).
+  - $O_{starved}$ expresses significantly reduced physical dimensions (`body_scale_index` reduced by $35\%$).
   - $O_{starved}$'s `Genome.loci` is $100\%$ identical to $O_{normal}$'s `Genome.loci`.
-  - Progeny of $O_{starved}$ raised under normal conditions develop full physical dimensions.
+  - Progeny of $O_{starved}$ raised under normal conditions develop full genetic body scale.
