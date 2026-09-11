@@ -9,8 +9,16 @@
 ### RULE 01: Do Not Turn LinhSinhVN into a Pokémon Clone
 LinhSinhVN is a creature-centric survival, genetics, and generational evolution simulation. Do not introduce human trainers, pocket capture mechanics, badge progression, or turn-based monster collection paradigms. The creature is the sovereign protagonist.
 
-### RULE 02: Vietnamese Biodiversity is a Core Identity Pillar
-The ecological context, species taxonomy, micro-environments, and aesthetic motifs must authentically reflect Vietnamese wildlife and landscapes. Native insects, arachnids, amphibians, and small animals form the bedrock of the species roster.
+### RULE 02: Vietnamese Biodiversity Boundary is a Core Identity Pillar
+LinhSinhVN is explicitly centered on biodiversity recorded within the **modern territory of Vietnam**.
+1. **No Automatic Regional Inclusions:** Broad regional descriptors such as "Indochina", "Southeast Asia", or "Asian" must **not** be treated as automatic inclusion criteria. A creature may be incorporated as a core species only when there is reasonable evidence that the species is recorded within the borders of Vietnam.
+2. **Provisional Handling for Uncertainty:** If the geographic or taxonomic status of a species within Vietnam is uncertain or unconfirmed, its status must be explicitly designated as `STATUS = PROVISIONAL` and it must **not** be presented as confirmed Vietnamese biodiversity.
+3. **Foreign / Introduced Species:** Non-native species may appear only when explicitly justified by future migration, cargo hitchhiking, or invasive ecology systems, and must be clearly marked as non-native.
+4. **Core Creature Roster Prioritization:**
+   - Priority 1: Vietnamese native species (*loài bản địa*)
+   - Priority 2: Vietnamese endemic species (*loài đặc hữu*)
+   - Priority 3: Species strongly associated with Vietnamese habitats and cultural ecosystems
+   - Priority 4: Verified Vietnamese biodiversity records in established scientific literature or herbarium/museum registries.
 
 ### RULE 03: Real Species, Fictional Variants, Mutations, and Evolutions Must Be Clearly Distinguished
 Data models and game taxonomy must strictly separate:

@@ -9,6 +9,8 @@
     "scientific_name",
     "common_name_vi",
     "status",
+    "biodiversity_status",
+    "vietnam_territory_recorded",
     "taxonomy",
     "supported_loci"
   ],
@@ -20,6 +22,25 @@
     "status": {
       "type": "string",
       "enum": ["PROVISIONAL — BIOLOGICAL VERIFICATION REQUIRED", "VERIFIED"]
+    },
+    "biodiversity_status": {
+      "type": "string",
+      "enum": [
+        "NATIVE",
+        "ENDEMIC",
+        "PROVISIONAL",
+        "NON_NATIVE_MIGRATORY",
+        "NON_NATIVE_INTRODUCED"
+      ],
+      "description": "Territorial classification within modern Vietnam. Broad regional terms ('Indochina', 'Southeast Asia') are not valid inclusion criteria."
+    },
+    "vietnam_territory_recorded": {
+      "type": "boolean",
+      "description": "Whether verifiable records exist within the modern territory of Vietnam"
+    },
+    "vietnam_evidence_reference": {
+      "type": "string",
+      "description": "Citation or registry ID of verified Vietnamese biodiversity record, if available"
     },
     "taxonomy": {
       "type": "object",

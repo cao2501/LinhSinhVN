@@ -6,7 +6,7 @@
 
 ---
 
-## 1. Evaluation Context & Methodological Boundary
+## 1. Evaluation Context & Methodological Boundaries
 
 ### 1.1 Real Biology vs. Gameplay Model
 LinhSinhVN enforces a strict conceptual distinction:
@@ -15,12 +15,24 @@ $$\text{REAL BIOLOGY (Inspiration / Qualitative Constraints)} \longrightarrow \t
 - **Real Biology:** Informs qualitative anatomical relationships, life cycles, sexual dimorphism, and environmental context. We do **not** claim exact biological field measurements or peer-reviewed biometric datasets for the prototype species.
 - **Gameplay Model:** Defines explicit, deterministic numerical parameters, normalized bounds, and derived combat/survival formulas designed for game balance and verification.
 
-### 1.2 Prototype Evaluation Criteria
+### 1.2 Vietnamese Biodiversity Boundary & Territorial Scope
+LinhSinhVN is strictly anchored to biodiversity recorded within the **modern territory of Vietnam**:
+- **Rejection of Vague Regional Labels:** Broad tags such as "Indochina", "Southeast Asia", or "Asian" must **never** serve as automatic inclusion criteria.
+- **Evidence Requirement:** A species may enter the core roster only when supported by reasonable evidence of verified records within Vietnam's territorial borders.
+- **Uncertainty Principle:** If geographic or taxonomic confirmation within Vietnam is incomplete, the taxon must carry `STATUS = PROVISIONAL` and `biodiversity_status = PROVISIONAL`.
+- **Foreign / Invasive Species:** Non-native species are excluded from the core roster unless explicitly justified by future migration or invasive ecology mechanics, and must be marked as non-native.
+- **Roster Priority Hierarchy:**
+  1. Vietnamese native species (*loài bản địa*)
+  2. Vietnamese endemic species (*loài đặc hữu*)
+  3. Species strongly associated with Vietnamese habitats and micro-ecosystems
+  4. Verified Vietnamese biodiversity records
+
+### 1.3 Prototype Technical Criteria
 1. **Morphological Legibility:** Distinct, exaggerated anatomical features recognizable in a 2D top-down view.
 2. **Sexual Dimorphism:** Clear differential gene expression between sexes to validate conditional phenotypic masking.
 3. **Continuous Phenotypic Variation:** Anatomy allowing observable scalar changes (e.g., horn curvature, shell proportion) without requiring hundreds of hand-crafted animation frames.
-4. **Cultural & Ecological Resonance:** Familiarity within Vietnamese rural traditions, folklore, or micro-habitats.
-5. **Production Feasibility:** Locomotion and clashing dynamics achievable with modular sprite layering.
+4. **Cultural & Ecological Resonance:** Deep familiarity within Vietnamese rural traditions, folklore, or domestic micro-habitats.
+5. **Production Feasibility:** Locomotion and clashing dynamics achievable with modular 2D sprite layering.
 
 ---
 
@@ -29,8 +41,9 @@ $$\text{REAL BIOLOGY (Inspiration / Qualitative Constraints)} \longrightarrow \t
 ### Candidate 1: Kiến vương hai sừng (Rhinoceros Beetle Prototype)
 - **Internal Prototype ID:** `xylotrupes_rhinoceros_proto`
 - **Scientific Name (Metadata):** *Xylotrupes gideon* complex (provisional grouping including *Xylotrupes socrates*)
+- **Biodiversity Status:** `PROVISIONAL` (pending taxonomic record verification within Vietnam)
 - **Taxonomy (Qualitative):** Order: Coleoptera; Family: Scarabaeidae; Subfamily: Dynastinae
-- **Observed Habitat Context:** Tropical lowland foliage, bamboo stands, rotting wood/humus substrate across Indochina.
+- **Observed Habitat Context in Vietnam:** Forested lowlands, decaying humus, bamboo clumps, and rural tree trunks across Northern, Central, and Southern Vietnam.
 - **Why Suitable:**
   - Iconic Vietnamese childhood association with beetle wrestling (*chọi kiến vương* / *chọi bọ hung*).
   - Extreme, legible sexual dimorphism: Males possess pronounced bifurcated cephalic and thoracic horns used as prying levers; females lack horns entirely, exhibiting compact oval carapaces.
@@ -45,9 +58,10 @@ $$\text{REAL BIOLOGY (Inspiration / Qualitative Constraints)} \longrightarrow \t
 
 ### Candidate 2: Bọ ngựa xanh châu Á (Asian Mantis)
 - **Scientific Name (Metadata):** *Hierodula patellifera*
+- **Biodiversity Status:** `PROVISIONAL`
 - **Taxonomy (Qualitative):** Order: Mantodea; Family: Mantidae
-- **Observed Habitat Context:** Garden shrubbery, rainforest margins across Vietnam.
-- **Why Suitable:** High recognition as an apex insect ambush predator with mobile head articulation and raptorial forelegs.
+- **Observed Habitat Context in Vietnam:** Garden foliage, agricultural shrubbery, forest margins in Vietnam.
+- **Why Suitable:** High recognition as an ambush insect predator with mobile head articulation and raptorial forelegs.
 - **Major Implementation Difficulty:** High animation overhead. Striking, grabbing, and multi-jointed leg articulation require dynamic inverse kinematics or extensive sprite sets.
 - **Recommendation:** Deferred to subsequent predatory milestones.
 
@@ -55,8 +69,9 @@ $$\text{REAL BIOLOGY (Inspiration / Qualitative Constraints)} \longrightarrow \t
 
 ### Candidate 3: Bọ cạp rừng Đông Dương (Asian Forest Scorpion)
 - **Scientific Name (Metadata):** *Heterometrus laoticus* / *Heterometrus silenus*
+- **Biodiversity Status:** `PROVISIONAL`
 - **Taxonomy (Qualitative):** Class: Arachnida; Order: Scorpiones; Family: Scorpionidae
-- **Observed Habitat Context:** Forest leaf litter, burrowing under decaying logs in Central/Southern Vietnam.
+- **Observed Habitat Context in Vietnam:** Forest floor leaf litter, burrows under decaying logs in Central and Southern Vietnam.
 - **Why Suitable:** Armored presence, dual physical (chelae claws) and chemical (venom telson) attack modes.
 - **Major Implementation Difficulty:** Multi-segmented tail animation complexity and premature introduction of venom toxicity balances before basic physical push mechanics are proven.
 - **Recommendation:** Deferred to subsequent predator milestones.
@@ -79,4 +94,6 @@ $$\text{REAL BIOLOGY (Inspiration / Qualitative Constraints)} \longrightarrow \t
 
 - **Internal Species Identifier:** `xylotrupes_rhinoceros_proto`
 - **Taxonomic Status:** **PROVISIONAL — BIOLOGICAL VERIFICATION REQUIRED**
-- **Taxonomy Note:** Regional Indochinese populations of the *Xylotrupes* genus contain taxonomic nuance between *X. gideon* and *X. socrates*. The internal ID `xylotrupes_rhinoceros_proto` isolates the simulation and data schemas from unresolved scientific debates. The game model draws qualitative morphological inspiration from these beetles while running entirely on decoupled gameplay constants.
+- **Territorial Justification:**
+  Rhinoceros beetles (*kiến vương*) are ubiquitous in Vietnamese folk culture and widely observed in Vietnamese tropical ecosystems. However, under the strict **Vietnamese Biodiversity Boundary**, the exact species-level distinction within modern Vietnamese territory (e.g., whether local populations are *Xylotrupes gideon*, *Xylotrupes socrates*, or specific subspecies) requires formal reference against verified Vietnamese entomological records.
+  The internal identifier `xylotrupes_rhinoceros_proto` isolates the gameplay engine while respecting the biodiversity boundary rule.

@@ -73,7 +73,7 @@ $$\text{GENOME} \longrightarrow \text{GENES} \longrightarrow \text{GENE EXPRESSI
 
 ## 4. Core Pillars
 
-1. **Vietnamese Biodiversity:** Deeply rooted in Vietnam’s unique tropical ecosystems—from monsoon rainforests and limestone karsts to terraced fields, mangrove swamps, and urban alleys. Primary focus on indigenous insects, arachnids, and small animals.
+1. **Vietnamese Biodiversity Boundary:** Deeply centered on fauna and flora recorded within the modern territory of Vietnam. Vague regional tags ("Indochina", "Southeast Asia", "Asian") are strictly rejected as automatic inclusion criteria. The core roster strictly prioritizes: (1) Vietnamese native species, (2) Vietnamese endemic species, (3) species strongly associated with Vietnamese habitats, and (4) verified Vietnamese biodiversity records. Any unconfirmed or ambiguous species carries `STATUS = PROVISIONAL`.
 2. **Authentic Genetics:** A deterministic, biologically credible genetic model over arbitrary level-up numbers.
 3. **Emergent Evolution:** Lineage evolution arises organically from natural selection and genetic drift, rather than pre-scripted linear evolution trees.
 4. **Creature-as-Player:** The player experiences the world from the scale, senses, and survival vulnerabilities of the creature.
