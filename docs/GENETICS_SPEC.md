@@ -113,7 +113,7 @@ For the initial prototype, exactly **8 loci** are defined:
 - **Allele Range:** $[0.0, 1.0]$.
 - **Expression Rule:** Sex-limited expression:
   - If `FEMALE`: $V_{exp} = 0.0$ (complete phenotypic suppression; alleles remain intact in genome and pass to progeny).
-  - If `MALE`: $V_{exp} = \left(\frac{a_1 + a_2}{2}\right) \times \text{AllometricModifier}(\text{body\_scale\_index})$.
+  - If `MALE`: $V_{exp} = \frac{a_1 + a_2}{2}$ (allometric scaling with `body_scale_index` is computed downstream in the phenotype mapping layer).
 - **Phenotype Target:** `cephalic_horn_scale` ($0.0$ for females; $0.20 \to 1.80$ for males).
 - **Stat Effect:** Scales `clash_power` (prying leverage in beetle wrestling).
 - **Trade-off:** High horn scale adds front-heavy balance drag and increases action stamina expenditure.
@@ -221,7 +221,9 @@ def recombine_genome(parent_a: Genome, parent_b: Genome, rng: DeterministicRNG) 
 def apply_mutation(genome: Genome, rng: DeterministicRNG, p_mut: float = 0.05, delta_max: float = 0.12) -> tuple[Genome, list[dict]]:
     mutation_history = []
     
-    for locus_id, locus in genome.loci.items():
+    # Iterate in canonical registry order to guarantee cross-platform determinism
+    for locus_id in SPECIES_LOCI_REGISTRY:
+        locus = genome.loci[locus_id]
         # Evaluate allele_1
         if rng.next_float() < p_mut:
             delta = (rng.next_float() * 2.0 - 1.0) * delta_max
@@ -286,7 +288,8 @@ Gameplay stats are computed exclusively from the phenotype layer:
 5. **Max Stamina (`max_stamina`):**
    $$\text{max\_stamina} = 80.0 + (\text{mass\_index} \times 25.0) - (\text{cephalic\_horn\_scale} \times 15.0)$$
 6. **Stamina Drain per Action (`action_stamina_cost`):**
-   $$\text{action\_stamina\_cost} = \frac{\text{base\_action\_cost}}{\text{stamina\_economy\_modifier}}$$
+   $$\text{action\_stamina\_cost} = \frac{\text{base\_action\_cost}}{\text{stamina\_economy\_modifier}} \quad (\text{normalized standard combat clash baseline: } \text{base\_action\_cost} = 10.0)$$
+   - *Baseline range:* $7.69 \to 12.50\text{ stamina per standard action}$.
 7. **Stamina Recovery Rate (`stamina_regen_rate`):**
    $$\text{stamina\_regen\_rate} = 5.0 + (\text{stamina\_economy\_modifier} \times 2.0)$$
 8. **Perception Radius (`perception_radius`):**
@@ -308,7 +311,8 @@ Under no circumstances do environmental stresses, nutritional deficits, or injur
    - During the larval/pupal nymph stage, nutritional deficits register an irreversible environmental modifier ($\eta \in [0.60, 1.00]$).
    - Upon adult emergence:
      $$\text{body\_scale\_realized} = \text{body\_scale\_index} \times \eta$$
-   - The adult organism has a stunted physical phenotype, but its **genome retains 100% of its original genetic potential**. Progeny raised in abundant nutrition express full genetic size.
+   - In `OrganismPhenotype`, the field `body_scale_index` stores this realized adult value, which naturally cascades into allometrically scaled traits (`mass_index`, `cephalic_horn_scale`, `thoracic_horn_scale`).
+   - The adult organism has a stunted physical phenotype, but its **genome retains 100% of its original genetic potential**. Progeny raised in abundant nutrition express full genetic potential.
 2. **Current Environmental Conditions:**
    - Ambient temperature, humidity, and solar radiation dynamically interact with `cuticle_pigment_ratio` to modify active movement and stamina efficiency without changing the underlying phenotype or genome.
 
