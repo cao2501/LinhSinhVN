@@ -186,3 +186,62 @@ In subsequent tasks:
 2. **Resource Competition**: Partitioning available food among competing organisms based on developmental stage and motility.
 3. **Population Breeding Scheduler**: Querying adult organisms for reproductive eligibility and committing reproduction transactions.
 4. **Mortality Pruning Policy**: Explicit administrative archival of dead records when population caps are reached.
+
+---
+
+## 10. Resource Allocation Model — TASK 06-B-01
+
+TASK 06-B-01 introduces the deterministic resource pool and allocation contract required before multi-organism lifecycle ticking.
+
+### Shared Resource Pool Concept
+A population cannot allow every organism to consume unbounded food from the environment. `ResourcePool` holds a finite non-negative quantity of food/resource available for consumption during a tick.
+
+```
+EnvironmentState.food_resource
+    │ (read-only input; environment depletion policy deferred)
+    ▼
+ResourcePool (finite non-negative resource container)
+    │
+    ├── Organism Demands: [{ organism_id, requested_amount }]
+    │
+    ▼
+allocateResourceDemands(availableResource, demands)
+    │
+    ├── 1. Validate demands & reject duplicate organism_ids
+    ├── 2. Sort demands strictly by organism_id ascending
+    ├── 3. Sequential allocate: min(requested, remaining)
+    │
+    ▼
+AllocationResult (Immutable, deterministic, fully traceable)
+```
+
+### Demand Contract & Responsibility Decoupling
+- Organism resource demand is represented as `{ organism_id, requested_amount }`.
+- The allocator does **not** invent or calculate nutrition formulas. Determining what an organism needs remains the responsibility of the Lifecycle/Species biology system.
+- In TASK 06-B-01, demand amounts are explicitly provided by the caller/test coordinator. Future task TASK 06-B-02 will connect lifecycle intake calculations to demand generation.
+
+### Canonical ID Order + Sequential Allocation Policy
+To ensure 100% deterministic, replayable, and insertion-order invariant results:
+1. Validate demands array and reject duplicate `organism_id` entries with an explicit error.
+2. Sort demands strictly by `organism_id` ascending lexicographically (UTF-16 code units).
+3. Process each demand sequentially:
+   $$\text{allocated\_amount} = \min(\text{requested\_amount}, \text{remaining\_resource})$$
+   $$\text{unmet\_amount} = \text{requested\_amount} - \text{allocated\_amount}$$
+   $$\text{remaining\_resource} \leftarrow \text{remaining\_resource} - \text{allocated\_amount}$$
+4. If resources are exhausted, remaining demands receive `allocated_amount = 0` and `unmet_amount = requested_amount`.
+
+### Fairness Limitation & Future Extension
+- Canonical ID ordering is intentionally simple, replayable, and free of floating-point jitter or tie-breaker ambiguity.
+- It is **not** claimed to be biologically realistic; it serves as the initial deterministic foundation.
+- Future tasks may replace or weight this allocation policy with:
+  - Body size / biomass weighting
+  - Starvation / hunger priority
+  - Motility and developmental stage priority
+  - Spatial proximity and foraging traits
+
+### Ownership Boundaries & Environment Non-Mutation
+- **Demand Immutability**: Input demand objects are never mutated.
+- **State Protection**: Organism records, lifecycle state, genetics, and environment state are untouched.
+- **Environment Boundary**: `EnvironmentState.food_resource` is **not** mutated during allocation. The decision of how and when consumed resources permanently deplete the environment is a population ecology policy deferred to subsequent tasks.
+- **API Safety**: `allocateResourceDemands()` is the pure single source of truth. `ResourcePool.allocateDemands()` invokes this function and updates pool state exactly once.
+- **Zero Biology in TASK 06-B-01**: This task establishes the allocation contract only; it does **not** execute organism lifecycle ticks.

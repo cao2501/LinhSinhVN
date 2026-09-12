@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/population/resource_allocation.schema.json",
+  "title": "ResourceAllocationResult",
+  "description": "Deterministic serializable snapshot of resource allocation among organism demands",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "initial_resource",
+    "total_requested",
+    "total_allocated",
+    "remaining_resource",
+    "allocations"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "initial_resource": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Total resource quantity available before allocation"
+    },
+    "total_requested": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Sum of all requested resource amounts"
+    },
+    "total_allocated": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Sum of all resource amounts successfully allocated"
+    },
+    "remaining_resource": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Resource quantity remaining after all demands are processed"
+    },
+    "allocations": {
+      "type": "array",
+      "description": "Individual allocation records strictly sorted by organism_id ascending",
+      "items": {
+        "type": "object",
+        "required": [
+          "organism_id",
+          "requested_amount",
+          "allocated_amount",
+          "unmet_amount"
+        ],
+        "properties": {
+          "organism_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Unique identifier of the demanding organism"
+          },
+          "requested_amount": {
+            "type": "number",
+            "minimum": 0.0,
+            "description": "Amount of resource requested"
+          },
+          "allocated_amount": {
+            "type": "number",
+            "minimum": 0.0,
+            "description": "Amount of resource allocated"
+          },
+          "unmet_amount": {
+            "type": "number",
+            "minimum": 0.0,
+            "description": "Deficit between requested and allocated amounts"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
