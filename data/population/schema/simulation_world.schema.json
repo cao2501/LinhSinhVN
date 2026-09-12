@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/population/simulation_world.schema.json",
+  "title": "SimulationWorldSnapshot",
+  "description": "Deterministic serializable snapshot of the simulation world state",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "simulation_seed",
+    "simulation_tick",
+    "last_delta_time",
+    "population_tick_seed",
+    "environment",
+    "population"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "simulation_seed": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]{16}$",
+      "description": "Immutable 64-bit hex master simulation seed"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Discrete simulation tick counter"
+    },
+    "last_delta_time": {
+      "type": ["number", "null"],
+      "minimum": 0.0,
+      "description": "Explicit delta_time supplied to the most recent advanceTick invocation, or null if unadvanced"
+    },
+    "population_tick_seed": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]{16}$",
+      "description": "Deterministic 64-bit seed derived for the current simulation tick"
+    },
+    "environment": {
+      "type": "object",
+      "description": "Canonical environment state snapshot"
+    },
+    "population": {
+      "$ref": "population_state.schema.json",
+      "description": "Canonical population state snapshot"
+    }
+  },
+  "additionalProperties": false
+}
