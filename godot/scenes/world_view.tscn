@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3 uid="uid://dm01c02worldview"]
+[gd_scene load_steps=8 format=3 uid="uid://dm01c02worldview"]
 
 [ext_resource type="Script" path="res://scripts/presentation/world_view.gd" id="1_world_view"]
 [ext_resource type="Script" path="res://scripts/presentation/world_grid_canvas.gd" id="2_grid_canvas"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://scripts/presentation/organisms_overlay.gd" id="4_organisms_overlay"]
 [ext_resource type="Script" path="res://scripts/ipc/ipc_client.gd" id="5_ipc_client"]
 [ext_resource type="Script" path="res://scripts/presentation/snapshot_synchronizer.gd" id="6_snapshot_synchronizer"]
+[ext_resource type="Script" path="res://scripts/presentation/presentation_controls.gd" id="7_presentation_controls"]
 
 [node name="WorldView" type="Node2D"]
 script = ExtResource("1_world_view")
@@ -30,5 +31,82 @@ script = ExtResource("5_ipc_client")
 
 [node name="SnapshotSynchronizer" type="Node" parent="."]
 script = ExtResource("6_snapshot_synchronizer")
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="PresentationControls" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("7_presentation_controls")
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/PresentationControls"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -60.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="HBoxContainer" type="HBoxContainer" parent="UI/PresentationControls/MarginContainer"]
+layout_mode = 2
+
+[node name="StatusPanel" type="VBoxContainer" parent="UI/PresentationControls/MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="BridgeStatusLabel" type="Label" parent="UI/PresentationControls/MarginContainer/HBoxContainer/StatusPanel"]
+layout_mode = 2
+text = "Bridge: DISCONNECTED"
+
+[node name="PlaybackStatusLabel" type="Label" parent="UI/PresentationControls/MarginContainer/HBoxContainer/StatusPanel"]
+layout_mode = 2
+text = "Status: PAUSED"
+
+[node name="TickLabel" type="Label" parent="UI/PresentationControls/MarginContainer/HBoxContainer/StatusPanel"]
+layout_mode = 2
+text = "Tick: 0"
+
+[node name="ZLayerLabel" type="Label" parent="UI/PresentationControls/MarginContainer/HBoxContainer/StatusPanel"]
+layout_mode = 2
+text = "Z: 0"
+
+[node name="SimulationControls" type="HBoxContainer" parent="UI/PresentationControls/MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="PlayButton" type="Button" parent="UI/PresentationControls/MarginContainer/HBoxContainer/SimulationControls"]
+layout_mode = 2
+text = "Play"
+
+[node name="PauseButton" type="Button" parent="UI/PresentationControls/MarginContainer/HBoxContainer/SimulationControls"]
+layout_mode = 2
+text = "Pause"
+
+[node name="StepButton" type="Button" parent="UI/PresentationControls/MarginContainer/HBoxContainer/SimulationControls"]
+layout_mode = 2
+text = "Step +1"
+
+[node name="ResetButton" type="Button" parent="UI/PresentationControls/MarginContainer/HBoxContainer/SimulationControls"]
+layout_mode = 2
+text = "Reset"
+
+[node name="SyncButton" type="Button" parent="UI/PresentationControls/MarginContainer/HBoxContainer/SimulationControls"]
+layout_mode = 2
+text = "Sync"
+
+[node name="ZControls" type="HBoxContainer" parent="UI/PresentationControls/MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="ZDownButton" type="Button" parent="UI/PresentationControls/MarginContainer/HBoxContainer/ZControls"]
+layout_mode = 2
+text = "Z ▼"
+
+[node name="ZUpButton" type="Button" parent="UI/PresentationControls/MarginContainer/HBoxContainer/ZControls"]
+layout_mode = 2
+text = "Z ▲"
 
 [connection signal="z_layer_changed" from="." to="OrganismsOverlay" method="set_active_z_layer"]
