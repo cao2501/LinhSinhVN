@@ -300,3 +300,82 @@ PHASE E: Validation + Atomic Commit
 - **Replay Determinism**: Canonical lexicographical sorting by `organism_id` guarantees identical allocation and evaluation results across repeated runs from identical initial state.
 - **Isolation**: Organisms evaluated in Phase D cannot read or write the state of other organisms within the same tick.
 - **Zero Double-Subtraction**: The `ResourcePool` is mutated exclusively during Phase E using `ResourcePool.commitAllocation(allocationResult)`.
+---
+
+## 12. World Population Tick Dispatching & Ecology Semantics (TASK 06-B-03)
+
+### 12.1 Purpose and Boundaries
+TASK 06-B-03 completes the world-level coordination layer for population simulation, connecting biological ticking with ecology semantics, resource inflow, environmental feedback, and demographic census tracking.
+
+Key boundaries enforced:
+- **No Reproduction**: Reproduction, mating, clutch generation, and egg deposition are strictly out of scope and deferred to TASK 06-C.
+- **Single Clock Ownership**: The world tick pipeline owns the single discrete clock mutation: exactly $N \rightarrow N+1$ on commit, $N$ on failure.
+- **Generic Demographics**: Lifecycle stages in demographics census are derived dynamically; no hardcoded stage strings. DEAD is treated strictly as demographic state, not a developmental stage.
+- **Zero RNG**: 100% deterministic, no Math.random, Date.now, or crypto.randomUUID.
+
+### 12.2 Mandatory Architectural Invariants
+- **INVARIANT-POPTICK-01**: `PopulationRegistry` is the ONLY authoritative source of demographic state.
+- **INVARIANT-POPTICK-02**: `Environment(t)` is the immutable input snapshot for tick $N$.
+- **INVARIANT-POPTICK-03**: Ecology feedback MUST create `Environment(t+1)`. It must NEVER mutate the `Environment(t)` snapshot used by organisms during tick $N$.
+- **INVARIANT-POPTICK-04**: One World Tick advances `SimulationClock` exactly once ($N \rightarrow N+1$), owned uniquely at the end of successful commit.
+- **INVARIANT-POPTICK-05**: `PopulationCensus` is pure-derived from post-commit registry state. No persistent demographic counters.
+- **INVARIANT-POPTICK-06**: `ResourcePool` and `EnvironmentState` are separate domain states; no implicit conversion occurs without an explicit `EcologyResourceProvider`.
+
+### 12.3 World Tick Pipeline Architecture
+```
+                    SimulationWorld
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+      Environment(t)                PopulationRegistry
+             │                           │
+             ▼                           ▼
+     EcologyResourceProvider       SpeciesRegistry
+             │                           │
+             ▼                           │
+       ResourcePool(t)                   │
+             │                           │
+             └──────────────┬────────────┘
+                            ▼
+                BiologicalTickCoordinator
+                            │
+                ┌───────────┴───────────┐
+                │                       │
+           Lifecycle                Allocation
+                │                       │
+                └───────────┬───────────┘
+                            ▼
+                         COMMIT
+                            │
+             ┌──────────────┼──────────────┐
+             ▼              ▼              ▼
+          Census       EcologyFeedback    Events
+             │              │
+             │              ▼
+             │         Environment(t+1)
+             │
+             └──────────────┬──────────────┘
+                            ▼
+                   WorldTickResult
+                            │
+                            ▼
+                       Clock N → N+1
+```
+
+### 12.4 Ecology Policies & Feedback
+- **Ecology OFF**: `Environment(t+1)` strictly equals `Environment(t)`.
+- **Ecology ON**: Policy-driven via `EcologyResourceProvider.applyFeedback(envT, consumptionSummary)`. Depletion decreases `food_resource` clamped within $[0.0, 1.0]$.
+- **Resource Summary Invariants**:
+  $$\text{remaining} = \text{initial} - \text{allocated}$$
+  $$\text{unmet} = \text{demanded} - \text{allocated}$$
+  $$0 \le \text{allocated} \le \min(\text{demanded}, \text{initial})$$
+  $$\text{remaining} \ge 0, \quad \text{unmet} \ge 0$$
+  $$\text{initial} = \text{allocated} + \text{remaining}, \quad \text{demanded} = \text{allocated} + \text{unmet}$$
+
+### 12.5 Pure-Derived Census & Transition Mortality
+`PopulationCensus` derives:
+- `counts`: `{ total, alive, dead }`
+- `alive_by_stage`: `Array<{ stage, count }>` (canonical ascending order)
+- `mortality.deaths_this_tick`: organisms where `preTick.is_alive === true && postTick.is_alive === false`
+- `mortality.death_causes`: causes aggregated strictly from tick transitions
+- `total_biomass`: total living biomass

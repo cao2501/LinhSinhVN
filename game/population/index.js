@@ -46,3 +46,20 @@ export {
   calculateOrganismResourceDemand,
   executePopulationBiologicalTick
 } from './biological_tick_coordinator.js';
+
+export {
+  SpeciesRegistry,
+  createSpeciesRegistry
+} from './species_registry.js';
+
+export {
+  EcologyResourceProvider,
+  StaticQuotaEcologyProvider,
+  EnvironmentalFractionProvider,
+  createStaticQuotaEcologyProvider,
+  createEnvironmentalFractionProvider
+} from './ecology_provider.js';
+
+export {
+  derivePopulationCensus
+} from './population_census.js';

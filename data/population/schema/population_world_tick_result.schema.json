@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/population/population_world_tick_result.schema.json",
+  "title": "PopulationWorldTickResult",
+  "description": "Deterministic serializable snapshot of an atomic world population tick with ecology semantics",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "simulation_tick",
+    "next_simulation_tick",
+    "delta_time",
+    "environment",
+    "resources",
+    "census",
+    "events"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "next_simulation_tick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "delta_time": {
+      "type": "number",
+      "exclusiveMinimum": 0.0
+    },
+    "environment": {
+      "type": "object",
+      "required": ["before", "after"],
+      "properties": {
+        "before": { "type": "object" },
+        "after": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "resources": {
+      "type": "object",
+      "required": ["initial", "demanded", "allocated", "unmet", "remaining"],
+      "properties": {
+        "initial": { "type": "number", "minimum": 0.0 },
+        "demanded": { "type": "number", "minimum": 0.0 },
+        "allocated": { "type": "number", "minimum": 0.0 },
+        "unmet": { "type": "number", "minimum": 0.0 },
+        "remaining": { "type": "number", "minimum": 0.0 }
+      },
+      "additionalProperties": false
+    },
+    "census": {
+      "$ref": "population_census.schema.json"
+    },
+    "events": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "resource_allocation": {
+      "$ref": "resource_allocation.schema.json"
+    },
+    "organism_results": {
+      "type": "array",
+      "items": { "type": "object" }
+    }
+  },
+  "additionalProperties": false
+}

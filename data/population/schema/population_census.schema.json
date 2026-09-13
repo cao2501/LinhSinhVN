@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/population/population_census.schema.json",
+  "title": "PopulationCensus",
+  "description": "Pure-derived immutable demographic snapshot of a population at a discrete simulation tick",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "simulation_tick",
+    "counts",
+    "alive_by_stage",
+    "mortality",
+    "total_biomass"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Discrete simulation tick"
+    },
+    "counts": {
+      "type": "object",
+      "required": ["total", "alive", "dead"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "alive": { "type": "integer", "minimum": 0 },
+        "dead": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "alive_by_stage": {
+      "type": "array",
+      "description": "Distribution of living organisms across developmental stages, sorted lexicographically by stage",
+      "items": {
+        "type": "object",
+        "required": ["stage", "count"],
+        "properties": {
+          "stage": { "type": "string", "minLength": 1 },
+          "count": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "mortality": {
+      "type": "object",
+      "required": ["deaths_this_tick", "death_causes"],
+      "properties": {
+        "deaths_this_tick": { "type": "integer", "minimum": 0 },
+        "death_causes": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "total_biomass": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Total biomass across living organisms"
+    }
+  },
+  "additionalProperties": false
+}

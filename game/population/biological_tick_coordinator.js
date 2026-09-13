@@ -1,33 +1,32 @@
 /**
  * LinhSinhVN — Population Biological Tick Coordinator
  *
- * Orchestrates headless, deterministic multi-organism lifecycle simulation ticks.
- * Coordinates Environment Snapshot, Resource Demand, Pure Allocation,
- * Isolated Biological Evaluation, and Atomic Commit.
+ * Implements the atomic, deterministic execution pipeline for ticking all organisms
+ * in a PopulationRegistry within a SimulationWorld.
  *
- * Guaranteed:
- * - 5-Phase Transactional Pipeline
- * - Zero hardcoded intake constants (data-driven via speciesProfile.nutrition_profile)
- * - EnvironmentState.food_resource is strictly READ-ONLY (no arbitrary unit conversions)
- * - True failure atomicity across Organisms, ResourcePool, and SimulationClock
- * - Dead organisms remain in PopulationRegistry (DEATH != REMOVE) and are skipped
- * - Zero RNG dependencies; canonical organism_id ordering
+ * Enforces:
+ * - 5-Phase Transaction: Snapshot -> Demand -> Pure Allocation -> Isolated Biological Evaluation -> Atomic Commit
+ * - Same-tick isolation: Evaluates all organisms against isolated pre-tick state
+ * - Pure resource allocation: Computes allocation without mutating ResourcePool until Phase E
+ * - Dead organism semantics: Dead organisms remain registered, generate zero demand, consume zero resources,
+ *   execute no lifecycle ticks, and emit no events
+ * - Data-driven intake capacity: Derives demand exclusively from species profile and deltaTime
+ * - Total transaction atomicity: Entire tick rolls back on any organism evaluation failure
+ * - Single clock advancement ownership
  */
 
-import { LifecycleRuntime } from '../lifecycle/lifecycle_runtime.js';
 import { toLifecycleEnvironment } from './environment_state.js';
 import { createResourceDemand } from './resource_demand.js';
 import { allocateResourceDemands } from './resource_pool.js';
+import { LifecycleRuntime } from '../lifecycle/lifecycle_runtime.js';
 
 /**
- * Calculates the resource demand for a single organism according to its stage
- * and the configured data-driven intake capacity in speciesProfile.
+ * Derives resource demand for a single organism.
  *
- * @param {object} organismState - Current organism state
- * @param {object} speciesProfile - Species profile containing lifecycle and nutrition profiles
- * @param {number} deltaTime - Discrete delta time
- * @returns {Readonly<{ organism_id: string, requested_amount: number }>} Validated ResourceDemand
- * @throws {TypeError} If speciesProfile lacks valid nutrition configuration
+ * @param {object} organismState - Canonical organism state
+ * @param {object} speciesProfile - Canonical species profile
+ * @param {number} deltaTime - Discrete tick delta time
+ * @returns {object} ResourceDemand conforming to resource_allocation.schema.json
  */
 export function calculateOrganismResourceDemand(organismState, speciesProfile, deltaTime) {
   if (!organismState || typeof organismState !== 'object') {
@@ -71,9 +70,10 @@ export function calculateOrganismResourceDemand(organismState, speciesProfile, d
  * @param {object} world - SimulationWorld instance
  * @param {number} deltaTime - Positive delta time
  * @param {object} options - Options containing species_profile and resource configuration
- * @param {object} options.species_profile - Mandatory species profile
+ * @param {object} [options.species_profile] - Species profile (optional if registered in world)
  * @param {number} [options.available_resource] - Explicit available resource quantity
  * @param {object} [options.resource_pool] - Optional ResourcePool instance
+ * @param {boolean} [options.advance_clock=true] - If false, does not advance SimulationClock (caller owns clock)
  * @returns {Readonly<object>} PopulationTickResult
  * @throws {Error} If inputs are invalid or any organism tick fails
  */
@@ -85,7 +85,14 @@ export function executePopulationBiologicalTick(world, deltaTime, options = {}) 
     throw new TypeError(`deltaTime must be a positive finite number, received: ${deltaTime}`);
   }
 
-  const speciesProfile = options.species_profile;
+  let speciesProfile = options.species_profile;
+  if (!speciesProfile && typeof world.getSpeciesProfile === 'function') {
+    const popSpeciesId = world.getPopulation()?.speciesId;
+    if (popSpeciesId && typeof world.hasSpeciesProfile === 'function' && world.hasSpeciesProfile(popSpeciesId)) {
+      speciesProfile = world.getSpeciesProfile(popSpeciesId);
+    }
+  }
+
   if (!speciesProfile || typeof speciesProfile !== 'object') {
     throw new TypeError('species_profile must be provided in options');
   }
@@ -208,8 +215,13 @@ export function executePopulationBiologicalTick(world, deltaTime, options = {}) 
     activePool.commitAllocation(allocationResult);
   }
 
-  // Advance SimulationClock by exactly +1 tick
-  const nextTick = world.advanceTick(deltaTime);
+  // Single clock ownership: advance clock only if caller does not manage it
+  let nextTick;
+  if (options.advance_clock === false) {
+    nextTick = currentTick + 1;
+  } else {
+    nextTick = world.advanceTick(deltaTime);
+  }
 
   return Object.freeze({
     schema_version: '1.0.0',
