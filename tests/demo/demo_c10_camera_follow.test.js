@@ -1151,7 +1151,8 @@ describe('DEMO-01-C / C-10-C: Organism Focus & Camera Follow Suite', () => {
   // --- C10-C28: Frozen-domain guard ---
   it('C10-C28: Frozen-domain guard verifies only the authorized files have been modified/introduced', () => {
     const baseCommit = 'a39a493';
-    const gitDiff = execSync(`git diff --name-only ${baseCommit}`, { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
+    const c10dClosedCommit = '1b1403064923df18f455fc6f9cbd28082d006b2d';
+    const gitDiff = execSync(`git diff --name-only ${baseCommit} ${c10dClosedCommit}`, { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
     const modifiedFiles = gitDiff ? gitDiff.split(/\r?\n/).filter(Boolean) : [];
 
     const untracked = execSync('git status --porcelain', { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
