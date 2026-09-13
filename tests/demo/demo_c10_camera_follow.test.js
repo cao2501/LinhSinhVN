@@ -13,7 +13,7 @@
  * - Strict epoch isolation via selection signal
  * - Zero simulation authority, zero IPC, zero duplicate organism interpolation
  * 
- * Covers C10-C01 through C10-C28 specified by Game Director.
+ * Covers C10-C01 through C10-C30 specified by Game Director.
  */
 
 import { describe, it } from 'node:test';
@@ -180,6 +180,7 @@ class CameraFollowModel {
     this.targetId = '';
     this.isFocusing = false;
     this.focusId = '';
+    this.focusStartedAlive = false;
 
     if (this.overlay) {
       this.overlay.connectSelection(id => this.onSelectionChanged(id));
@@ -213,12 +214,14 @@ class CameraFollowModel {
 
     this.isFocusing = true;
     this.focusId = orgId;
+    this.focusStartedAlive = Boolean(rec.is_alive);
     return true;
   }
 
   cancelFocus() {
     this.isFocusing = false;
     this.focusId = '';
+    this.focusStartedAlive = false;
   }
 
   startFollowing(orgId) {
@@ -297,6 +300,11 @@ class CameraFollowModel {
     if (this.isFocusing) {
       const rec = this.overlay.getOrganismCameraTarget(this.focusId);
       if (!rec.valid) {
+        this.cancelFocus();
+        return;
+      }
+      const isAliveNow = Boolean(rec.is_alive);
+      if (this.focusStartedAlive && !isAliveNow) {
         this.cancelFocus();
         return;
       }
@@ -747,6 +755,78 @@ describe('DEMO-01-C / C-10-C: Organism Focus & Camera Follow Suite', () => {
     camera.onSelectionChanged('org_same');
     assert.strictEqual(camera.isTracking, true);
     assert.strictEqual(camera.targetId, 'org_same');
+  });
+
+  // --- C10-C29: alive target dying during active Focus immediately cancels Focus ---
+  it('C10-C29: Alive target dying during active Focus animation immediately cancels Focus and halts camera', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_f_die', position: { x: 40, y: 40, z: 0 }, is_alive: true }
+    ];
+    overlay.selectOrganism('org_f_die');
+    const camera = new CameraFollowModel(overlay);
+    camera.position = { x: 100.0, y: 100.0 };
+
+    // 1 & 2: Start Focus
+    assert.strictEqual(camera.focusOrganism('org_f_die'), true);
+    // 3: Assert Focus active
+    assert.strictEqual(camera.isFocusing, true);
+    assert.strictEqual(camera.focusId, 'org_f_die');
+    assert.strictEqual(camera.focusStartedAlive, true);
+
+    // 4: Process at least one frame so Focus is genuinely in progress
+    camera.process(0.016);
+    assert.strictEqual(camera.isFocusing, true);
+    const posMid = { ...camera.position };
+    assert.ok(posMid.x > 100.0, 'Camera moved toward target');
+
+    // 5: Change organism is_alive from true -> false
+    overlay.cachedOrganisms[0].is_alive = false;
+
+    // 6: Process another frame
+    camera.process(0.016);
+
+    // 7: Assert isFocusing === false and focusId === ""
+    assert.strictEqual(camera.isFocusing, false, 'Focus must be cancelled immediately when alive target dies');
+    assert.strictEqual(camera.focusId, '', 'focusId must be cleared on cancellation');
+
+    // 8: Assert camera position remains finite
+    assert.ok(Number.isFinite(camera.position.x) && Number.isFinite(camera.position.y), 'Camera position must remain finite');
+    assert.strictEqual(camera.position.x, posMid.x, 'Camera position must freeze where it was when cancelled');
+
+    // 9: Assert selection is not modified by CameraController
+    assert.strictEqual(overlay.selectedOrganismId, 'org_f_die', 'Selection must remain untouched by CameraController');
+  });
+
+  // --- C10-C30: dead organism may start Focus and remain focusable while already dead ---
+  it('C10-C30: Starting Focus on already-dead organism is permitted and completes smoothly', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_f_dead', position: { x: 30, y: 30, z: 0 }, is_alive: false }
+    ];
+    const camera = new CameraFollowModel(overlay, { x: 400, y: 400 });
+    camera.zoom = 2.0;
+    camera.position = { x: 200.0, y: 200.0 };
+
+    // 1 & 2: organism is_alive=false, focus succeeds
+    assert.strictEqual(camera.focusOrganism('org_f_dead'), true);
+    assert.strictEqual(camera.isFocusing, true);
+    assert.strictEqual(camera.focusId, 'org_f_dead');
+    assert.strictEqual(camera.focusStartedAlive, false);
+
+    // 3 & 4: Focus remains active after processing, no cancellation merely because dead
+    camera.process(0.016);
+    assert.strictEqual(camera.isFocusing, true, 'Focus remains active after frame processing on dead organism');
+    assert.ok(camera.position.x > 200.0, 'Camera moves toward corpse position');
+
+    // Process frames until arrival
+    for (let i = 0; i < 60; i++) {
+      camera.process(0.016);
+      if (!camera.isFocusing) break;
+    }
+
+    assert.strictEqual(camera.isFocusing, false, 'Focus completes upon reaching target');
+    assert.ok(Math.abs(camera.position.x - 488.0) < 1.0, 'Camera reached dead organism location');
   });
 
   // --- C10-C28: Frozen-domain guard ---

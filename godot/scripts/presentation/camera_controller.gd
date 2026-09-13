@@ -45,6 +45,7 @@ var _is_tracking: bool = false
 var _target_id: String = ""
 var _is_focusing: bool = false
 var _focus_id: String = ""
+var _focus_started_alive: bool = false
 
 func _ready() -> void:
 	position = Config.WORLD_CENTER_PIXEL
@@ -118,11 +119,13 @@ func focus_organism(org_id: String) -> bool:
 	# Focus is permitted for both alive and dead organisms on active layer
 	_is_focusing = true
 	_focus_id = org_id
+	_focus_started_alive = bool(target_rec.get("is_alive", false))
 	return true
 
 func cancel_focus() -> void:
 	_is_focusing = false
 	_focus_id = ""
+	_focus_started_alive = false
 
 func is_focusing() -> bool:
 	return _is_focusing
@@ -238,6 +241,11 @@ func _process(delta: float) -> void:
 
 		var target_rec: Dictionary = _overlay.get_organism_camera_target(_focus_id)
 		if not bool(target_rec.get("valid", false)):
+			cancel_focus()
+			return
+
+		var is_alive_now: bool = bool(target_rec.get("is_alive", false))
+		if _focus_started_alive and not is_alive_now:
 			cancel_focus()
 			return
 
