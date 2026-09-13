@@ -500,7 +500,8 @@ describe('DEMO-01-C / C-09-E: Organism Selection & Inspection Suite', () => {
 
   // --- C09-E19: Frozen-domain guard ---
   it('C09-E19: Frozen-domain guard verifies only the 4 authorized files have been modified/introduced', () => {
-    const gitDiff = execSync('git diff --name-only origin/main', { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
+    const baseCommit = '74666fb';
+    const gitDiff = execSync(`git diff --name-only ${baseCommit} HEAD`, { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
     const modifiedFiles = gitDiff ? gitDiff.split(/\r?\n/).filter(Boolean) : [];
 
     const untracked = execSync('git status --porcelain', { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
@@ -522,8 +523,12 @@ describe('DEMO-01-C / C-09-E: Organism Selection & Inspection Suite', () => {
 
   // --- C09-E20: Scene only adds OrganismInspectionUI ---
   it('C09-E20: world_view.tscn diff only adds OrganismInspectionUI under UI CanvasLayer', () => {
-    const sceneDiff = execSync('git diff godot/scenes/world_view.tscn', { cwd: ROOT_DIR, encoding: 'utf8' });
-    assert.ok(sceneDiff.includes('OrganismInspectionUI'), 'Scene must contain OrganismInspectionUI addition');
+    const sceneContent = fs.readFileSync(SCENE_PATH, 'utf8');
+    assert.ok(sceneContent.includes('OrganismInspectionUI'), 'Scene must contain OrganismInspectionUI addition');
+
+    const baseCommit = '74666fb';
+    const sceneDiff = execSync(`git diff ${baseCommit} HEAD -- godot/scenes/world_view.tscn`, { cwd: ROOT_DIR, encoding: 'utf8' });
+    assert.ok(sceneDiff.includes('OrganismInspectionUI'), 'Scene diff must contain OrganismInspectionUI addition');
     const addedLines = sceneDiff.split(/\r?\n/).filter(l => l.startsWith('+') && !l.startsWith('+++'));
     for (const line of addedLines) {
       assert.doesNotMatch(line, /Camera2D|WorldGridCanvas|StaticZonesOverlay|IpcClient|SnapshotSynchronizer|PresentationControls|ObservationLog/);
