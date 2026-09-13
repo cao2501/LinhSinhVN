@@ -5,11 +5,14 @@ extends Control
 # LinhSinhVN Presentation Shell — DEMO-01-C / C-09-E Organism Inspection UI
 #
 # PRESENTATION-ONLY ORGANISM INSPECTION PANEL:
-# - Displays read-only identity, biology, vitals, spatial, and phenotype data
-#   from the latest accepted presentation snapshot.
+# - OrganismInspectionUI receives selection from OrganismsOverlay and reads
+#   the latest accepted organism presentation record exposed by that overlay.
 # - Controlled strictly by OrganismsOverlay selection state (organism_selected signal).
+# - ZERO synchronizer binding: pure UI discovery of OrganismsOverlay.
 # - ZERO simulation authority: never issues IPC commands, never mutates state.
 # - ZERO raw genetics exposure from UI rendering.
+# - FAIL-CLOSED: NEVER manufactures biological defaults when fields are absent
+#   or invalid. Missing/invalid values fail closed to "—".
 # - Hidden by default; displayed when an organism is selected; hidden on deselect or reset.
 # ==============================================================================
 
@@ -114,7 +117,7 @@ func _build_ui() -> void:
 	vbox.add_child(_stage_action_label)
 
 	_progress_label = Label.new()
-	_progress_label.text = "Development: —"
+	_progress_label.text = "Progress: —"
 	vbox.add_child(_progress_label)
 
 	# 4. Vitals Section
@@ -124,7 +127,7 @@ func _build_ui() -> void:
 
 	# 5. Spatial Section
 	_spatial_label = Label.new()
-	_spatial_label.text = "Pos: — | Habitat: —"
+	_spatial_label.text = "Pos: — | Shelter: —"
 	vbox.add_child(_spatial_label)
 
 	var sep3: HSeparator = HSeparator.new()
@@ -146,6 +149,38 @@ func _on_organism_selected(org_id: String) -> void:
 	_current_organism_id = org_id
 	refresh()
 
+func _read_required_string(dict: Dictionary, key: String, fallback_key: String = "") -> String:
+	if dict.has(key) and dict[key] != null and typeof(dict[key]) == TYPE_STRING:
+		var s: String = String(dict[key]).strip_edges()
+		if not s.is_empty():
+			return s
+	if not fallback_key.is_empty() and dict.has(fallback_key) and dict[fallback_key] != null and typeof(dict[fallback_key]) == TYPE_STRING:
+		var s_fb: String = String(dict[fallback_key]).strip_edges()
+		if not s_fb.is_empty():
+			return s_fb
+	return "—"
+
+func _read_required_number(dict: Dictionary, key: String) -> String:
+	if dict.has(key) and dict[key] != null and (typeof(dict[key]) == TYPE_FLOAT or typeof(dict[key]) == TYPE_INT):
+		var val: float = float(dict[key])
+		if not is_nan(val) and not is_inf(val):
+			return "%.2f" % val
+	return "—"
+
+func _read_required_float(dict: Dictionary, key: String, decimals: int = 1) -> String:
+	if dict.has(key) and dict[key] != null and (typeof(dict[key]) == TYPE_FLOAT or typeof(dict[key]) == TYPE_INT):
+		var val: float = float(dict[key])
+		if not is_nan(val) and not is_inf(val):
+			return ("%." + str(decimals) + "f") % val
+	return "—"
+
+func _read_required_int(dict: Dictionary, key: String) -> String:
+	if dict.has(key) and dict[key] != null and (typeof(dict[key]) == TYPE_INT or typeof(dict[key]) == TYPE_FLOAT):
+		var val: float = float(dict[key])
+		if not is_nan(val) and not is_inf(val):
+			return str(int(val))
+	return "—"
+
 func refresh() -> void:
 	if _current_organism_id.is_empty():
 		visible = false
@@ -162,48 +197,75 @@ func refresh() -> void:
 		visible = false
 		return
 
-	# Populate UI fields strictly from accepted snapshot data
-	var is_alive: bool = bool(org.get("is_alive", true))
-	var species: String = String(org.get("species_id", "xylotrupes_rhinoceros"))
-	var sex: String = String(org.get("sex", "UNKNOWN"))
-	var gen: int = int(org.get("generation", 1))
-	var stage_label: String = String(org.get("stage_display_label", String(org.get("current_stage_id", "STAGE_EGG"))))
-	var action_label: String = String(org.get("action_display_label", String(org.get("action_intent", "IDLE"))))
-	var dev_prog: float = float(org.get("developmental_progress", 0.0))
-	var energy: float = float(org.get("stored_energy", 0.0))
-	var biomass: float = float(org.get("structural_biomass", 0.0))
+	# Populate UI fields strictly from accepted snapshot data without fabricated fallbacks
+	var status_text: String = "Status: —"
+	var status_color: Color = Color(0.7, 0.7, 0.7, 1.0)
+	if org.has("is_alive") and org["is_alive"] != null and typeof(org["is_alive"]) == TYPE_BOOL:
+		if bool(org["is_alive"]):
+			status_text = "Status: ALIVE"
+			status_color = Color(0.3, 0.9, 0.3, 1.0)
+		else:
+			status_text = "Status: DEAD"
+			status_color = Color(0.7, 0.7, 0.7, 1.0)
 
-	var pos_dict: Dictionary = org.get("position", {})
-	var px: int = int(pos_dict.get("x", 0))
-	var py: int = int(pos_dict.get("y", 0))
-	var pz: int = int(pos_dict.get("z", 0))
-	var habitat: String = String(org.get("habitat_id", "unknown"))
-	var shelter: Variant = org.get("sheltered_in", null)
-	var shelter_str: String = String(shelter) if shelter != null else "None"
+	var species: String = _read_required_string(org, "species_id")
+	var sex: String = _read_required_string(org, "sex")
+	var gen: String = _read_required_int(org, "generation")
 
-	var scale_idx: float = float(org.get("body_scale_index", 1.0))
-	var pigment: float = float(org.get("cuticle_pigment_ratio", 0.5))
-	var ch_horn: float = float(org.get("cephalic_horn_scale", 0.0))
-	var th_horn: float = float(org.get("thoracic_horn_scale", 0.0))
-	var tarsal: float = float(org.get("tarsal_grip_index", 1.0))
+	var stage_label: String = _read_required_string(org, "stage_display_label", "current_stage_id")
+	var action_label: String = _read_required_string(org, "action_display_label", "action_intent")
+
+	var dev_prog_str: String = "—"
+	if org.has("developmental_progress") and org["developmental_progress"] != null and (typeof(org["developmental_progress"]) == TYPE_FLOAT or typeof(org["developmental_progress"]) == TYPE_INT):
+		var dp: float = float(org["developmental_progress"])
+		if not is_nan(dp) and not is_inf(dp):
+			dev_prog_str = "%.1f%%" % (dp * 100.0)
+
+	var energy: String = _read_required_float(org, "stored_energy", 1)
+	var biomass: String = _read_required_float(org, "structural_biomass", 1)
+
+	var pos_str: String = "—"
+	if org.has("position") and org["position"] != null and typeof(org["position"]) == TYPE_DICTIONARY:
+		var pos_dict: Dictionary = org["position"]
+		if pos_dict.has("x") and pos_dict.has("y") and pos_dict.has("z") and pos_dict["x"] != null and pos_dict["y"] != null and pos_dict["z"] != null:
+			var px: float = float(pos_dict["x"])
+			var py: float = float(pos_dict["y"])
+			var pz: float = float(pos_dict["z"])
+			if not is_nan(px) and not is_nan(py) and not is_nan(pz) and not is_inf(px) and not is_inf(py) and not is_inf(pz):
+				pos_str = "(%d, %d, %d)" % [int(px), int(py), int(pz)]
+
+	var habitat: String = _read_required_string(org, "habitat_id")
+
+	var shelter_str: String = "—"
+	if org.has("sheltered_in"):
+		var shelter: Variant = org["sheltered_in"]
+		if shelter == null:
+			shelter_str = "None"
+		elif typeof(shelter) == TYPE_STRING:
+			var s_val: String = String(shelter).strip_edges()
+			shelter_str = s_val if not s_val.is_empty() else "—"
+		else:
+			shelter_str = String(shelter)
+
+	var scale_idx: String = _read_required_number(org, "body_scale_index")
+	var pigment: String = _read_required_number(org, "cuticle_pigment_ratio")
+	var ch_horn: String = _read_required_number(org, "cephalic_horn_scale")
+	var th_horn: String = _read_required_number(org, "thoracic_horn_scale")
+	var tarsal: String = _read_required_number(org, "tarsal_grip_index")
 
 	# Format Labels
 	_id_label.text = "ID: %s" % _current_organism_id
 	_species_label.text = "Species: %s" % species
-	_sex_gen_label.text = "Sex: %s | Gen: %d" % [sex, gen]
+	_sex_gen_label.text = "Sex: %s | Gen: %s" % [sex, gen]
 
-	if is_alive:
-		_status_label.text = "Status: ALIVE"
-		_status_label.modulate = Color(0.3, 0.9, 0.3, 1.0)
-	else:
-		_status_label.text = "Status: DEAD"
-		_status_label.modulate = Color(0.7, 0.7, 0.7, 1.0)
+	_status_label.text = status_text
+	_status_label.modulate = status_color
 
 	_stage_action_label.text = "Stage: %s | Action: %s" % [stage_label, action_label]
-	_progress_label.text = "Progress: %.1f%%" % (dev_prog * 100.0)
-	_vitals_label.text = "Energy: %.1f | Biomass: %.1f" % [energy, biomass]
-	_spatial_label.text = "Pos: (%d, %d, %d) | Shelter: %s" % [px, py, pz, shelter_str]
-	_phenotype_label.text = "Scale: %.2f | Pigment: %.2f | Grip: %.2f\nHorns: C=%.2f, T=%.2f" % [scale_idx, pigment, tarsal, ch_horn, th_horn]
+	_progress_label.text = "Progress: %s" % dev_prog_str
+	_vitals_label.text = "Energy: %s | Biomass: %s" % [energy, biomass]
+	_spatial_label.text = "Pos: %s | Shelter: %s" % [pos_str, shelter_str]
+	_phenotype_label.text = "Scale: %s | Pigment: %s | Grip: %s\nHorns: C=%s, T=%s" % [scale_idx, pigment, tarsal, ch_horn, th_horn]
 
 	visible = true
 

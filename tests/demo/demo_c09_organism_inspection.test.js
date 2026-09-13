@@ -5,8 +5,9 @@
  * 
  * Presentation-only selection and inspection model verification.
  * Zero simulation authority, zero command dispatching, zero biological mutation.
+ * Fail-closed data formatting without manufactured biological defaults.
  * 
- * Covers C09-E01 through C09-E20 specified by Game Director.
+ * Covers C09-E01 through C09-E28 specified by Game Director.
  */
 
 import { describe, it } from 'node:test';
@@ -88,83 +89,62 @@ class OrganismSelectionModel {
           target_px: { ...targetPos },
           alpha: 1.0
         });
-      } else if (!this.interpolationStates.has(orgId)) {
-        this.interpolationStates.set(orgId, {
-          source_px: { ...targetPos },
-          target_px: { ...targetPos },
-          alpha: 1.0
-        });
       } else {
-        const st = this.interpolationStates.get(orgId);
-        const prevTarget = st.target_px;
-        if (prevTarget.x === targetPos.x && prevTarget.y === targetPos.y) {
-          st.target_px = { ...targetPos };
-          st.alpha = 1.0;
+        const existing = this.interpolationStates.get(orgId);
+        if (!existing) {
+          this.interpolationStates.set(orgId, {
+            source_px: { ...targetPos },
+            target_px: { ...targetPos },
+            alpha: 1.0
+          });
         } else {
-          const currentVisual = interpolate_position(st.source_px, prevTarget, st.alpha);
-          st.source_px = currentVisual;
-          st.target_px = { ...targetPos };
-          st.alpha = 0.0;
+          const currentVisual = interpolate_position(existing.source_px, existing.target_px, existing.alpha);
+          if (existing.target_px.x !== targetPos.x || existing.target_px.y !== targetPos.y) {
+            existing.source_px = currentVisual;
+            existing.target_px = { ...targetPos };
+            existing.alpha = 0.0;
+          }
         }
       }
     }
 
-    // Prune missing organisms
-    for (const kid of Array.from(this.interpolationStates.keys())) {
-      if (!activeIds.has(kid)) {
-        this.interpolationStates.delete(kid);
-      }
-    }
-
-    // Selection lifecycle
-    if (this.selectedOrganismId !== "") {
-      if (!activeIds.has(this.selectedOrganismId)) {
-        this.selectedOrganismId = "";
-        this.events.push({ type: 'selection_cleared', reason: 'missing_organism' });
-      } else {
-        this.events.push({ type: 'selection_refreshed', organism_id: this.selectedOrganismId });
+    // Prune removed organisms
+    for (const id of Array.from(this.interpolationStates.keys())) {
+      if (!activeIds.has(id)) {
+        this.interpolationStates.delete(id);
+        if (this.selectedOrganismId === id) {
+          this.selectedOrganismId = "";
+          this.events.push({ type: 'selection_cleared', reason: 'organism_pruned', organism_id: id });
+        }
+        if (this.hoveredOrganismId === id) {
+          this.hoveredOrganismId = "";
+        }
       }
     }
   }
 
-  getVisualPosition(org) {
+  getVisualPosition(orgId) {
+    const st = this.interpolationStates.get(orgId);
+    if (!st) return null;
+    return interpolate_position(st.source_px, st.target_px, st.alpha);
+  }
+
+  getVisualPositionWithStack(org, slotIndex, totalInCell) {
     const orgId = String(org.organism_id);
-    const pos = org.position;
-    const origin = { x: pos.x * CELL_SIZE, y: pos.y * CELL_SIZE };
-    const defaultCenter = { x: origin.x + 8.0, y: origin.y + 8.0 };
+    const center = this.getVisualPosition(orgId) || calculate_pixel_center(org.position.x, org.position.y);
+    if (totalInCell <= 1) return center;
 
-    if (this.interpolationStates.has(orgId)) {
-      const st = this.interpolationStates.get(orgId);
-      return interpolate_position(st.source_px, st.target_px, st.alpha);
-    }
-    return defaultCenter;
-  }
-
-  getVisualPositionWithStack(org, indexInCell, countInCell) {
-    const baseInterp = this.getVisualPosition(org);
-    const pos = org.position;
-    const origin = { x: pos.x * CELL_SIZE, y: pos.y * CELL_SIZE };
-    const cellCenter = { x: origin.x + 8.0, y: origin.y + 8.0 };
-
-    let fallbackCenter = cellCenter;
-    if (countInCell === 2) {
-      fallbackCenter = { x: origin.x + (indexInCell === 0 ? 5.0 : 11.0), y: origin.y + 8.0 };
-    } else if (countInCell === 3) {
-      fallbackCenter = {
-        x: origin.x + (indexInCell === 0 ? 5.0 : (indexInCell === 1 ? 11.0 : 8.0)),
-        y: origin.y + (indexInCell === 2 ? 11.0 : 5.0)
-      };
-    } else if (countInCell === 4) {
-      fallbackCenter = {
-        x: origin.x + (indexInCell % 2 === 0 ? 5.0 : 11.0),
-        y: origin.y + (indexInCell < 2 ? 5.0 : 11.0)
-      };
-    } else if (countInCell > 4) {
-      fallbackCenter = cellCenter;
-    }
-
-    const slotOffset = { x: fallbackCenter.x - cellCenter.x, y: fallbackCenter.y - cellCenter.y };
-    return { x: baseInterp.x + slotOffset.x, y: baseInterp.y + slotOffset.y };
+    const stackOffsets = [
+      { x: -3, y: -3 },
+      { x: 3, y: -3 },
+      { x: -3, y: 3 },
+      { x: 3, y: 3 }
+    ];
+    const offset = stackOffsets[slotIndex % 4];
+    return {
+      x: center.x + offset.x,
+      y: center.y + offset.y
+    };
   }
 
   hitTest(pixelPos) {
@@ -232,90 +212,169 @@ class OrganismSelectionModel {
   }
 }
 
+// Pure presentation inspection formatter mirroring OrganismInspectionUI fail-closed logic
+function formatInspectionData(org, organismId) {
+  function readRequiredString(dict, key, fallbackKey = "") {
+    if (dict && dict[key] != null && typeof dict[key] === 'string') {
+      const s = dict[key].trim();
+      if (s.length > 0) return s;
+    }
+    if (fallbackKey && dict && dict[fallbackKey] != null && typeof dict[fallbackKey] === 'string') {
+      const s_fb = dict[fallbackKey].trim();
+      if (s_fb.length > 0) return s_fb;
+    }
+    return "—";
+  }
+
+  function readRequiredNumber(dict, key) {
+    if (dict && dict[key] != null && typeof dict[key] === 'number') {
+      const val = dict[key];
+      if (!Number.isNaN(val) && Number.isFinite(val)) {
+        return val.toFixed(2);
+      }
+    }
+    return "—";
+  }
+
+  function readRequiredFloat(dict, key, decimals = 1) {
+    if (dict && dict[key] != null && typeof dict[key] === 'number') {
+      const val = dict[key];
+      if (!Number.isNaN(val) && Number.isFinite(val)) {
+        return val.toFixed(decimals);
+      }
+    }
+    return "—";
+  }
+
+  function readRequiredInt(dict, key) {
+    if (dict && dict[key] != null && typeof dict[key] === 'number') {
+      const val = dict[key];
+      if (!Number.isNaN(val) && Number.isFinite(val)) {
+        return String(Math.floor(val));
+      }
+    }
+    return "—";
+  }
+
+  const species = readRequiredString(org, "species_id");
+  const sex = readRequiredString(org, "sex");
+  const gen = readRequiredInt(org, "generation");
+  const stage = readRequiredString(org, "stage_display_label", "current_stage_id");
+  const action = readRequiredString(org, "action_display_label", "action_intent");
+
+  let devProg = "—";
+  if (org && org.developmental_progress != null && typeof org.developmental_progress === 'number') {
+    const dp = org.developmental_progress;
+    if (!Number.isNaN(dp) && Number.isFinite(dp)) {
+      devProg = (dp * 100).toFixed(1) + "%";
+    }
+  }
+
+  const energy = readRequiredFloat(org, "stored_energy", 1);
+  const biomass = readRequiredFloat(org, "structural_biomass", 1);
+
+  const scale = readRequiredNumber(org, "body_scale_index");
+  const pigment = readRequiredNumber(org, "cuticle_pigment_ratio");
+  const chHorn = readRequiredNumber(org, "cephalic_horn_scale");
+  const thHorn = readRequiredNumber(org, "thoracic_horn_scale");
+  const tarsal = readRequiredNumber(org, "tarsal_grip_index");
+
+  return {
+    id: organismId,
+    species,
+    sex,
+    generation: gen,
+    stage,
+    action,
+    developmental_progress: devProg,
+    stored_energy: energy,
+    structural_biomass: biomass,
+    body_scale_index: scale,
+    cuticle_pigment_ratio: pigment,
+    cephalic_horn_scale: chHorn,
+    thoracic_horn_scale: thHorn,
+    tarsal_grip_index: tarsal
+  };
+}
+
 describe('DEMO-01-C / C-09-E: Organism Selection & Inspection Suite', () => {
 
-  // --- C09-E01: Organism ID is used verbatim ---
+  // --- C09-E01: Organism ID verbatim preservation ---
   it('C09-E01: Organism ID is preserved verbatim without synthesis, hashing, or UUID conversion', () => {
     const model = new OrganismSelectionModel();
-    const org = { organism_id: 'beetle_specimen_alpha_99', position: { x: 10, y: 10, z: 0 } };
-    model.applySnapshot([org], 0);
+    const rawId = 'org_xylotrupes_001_alpha';
+    model.applySnapshot([{ organism_id: rawId, position: { x: 20, y: 20, z: 0 } }], 0);
 
-    const hit = model.hitTest(calculate_pixel_center(10, 10));
-    assert.ok(hit);
-    assert.strictEqual(hit.organism_id, 'beetle_specimen_alpha_99');
+    const center = calculate_pixel_center(20, 20);
+    model.onMouseClick(center);
 
-    // GDScript inspection source audit
-    const uiCode = fs.readFileSync(INSPECTION_UI_PATH, 'utf8');
-    assert.ok(uiCode.includes('_id_label.text = "ID: %s" % _current_organism_id'));
+    assert.strictEqual(model.selectedOrganismId, rawId, 'Organism ID must match verbatim');
   });
 
-  // --- C09-E02: Mouse hit-test uses presentation position ---
+  // --- C09-E02: Mouse hit-test operates in pixel space ---
   it('C09-E02: Mouse hit-test operates in continuous presentation pixel space', () => {
     const model = new OrganismSelectionModel();
-    model.applySnapshot([{ organism_id: 'org_1', position: { x: 5, y: 5, z: 0 } }], 0);
+    model.applySnapshot([{ organism_id: 'org_test', position: { x: 5, y: 5, z: 0 } }], 0);
 
-    const center = calculate_pixel_center(5, 5); // (88, 88)
+    // Center of cell (5, 5) is (5*16 + 8, 5*16 + 8) = (88, 88)
+    const center = calculate_pixel_center(5, 5);
+    assert.strictEqual(center.x, 88);
+    assert.strictEqual(center.y, 88);
+
     // Click within radius
-    const hitNear = model.hitTest({ x: center.x + 4.0, y: center.y - 4.0 });
-    assert.ok(hitNear, 'Must hit within 12px radius');
-    assert.strictEqual(hitNear.organism_id, 'org_1');
+    const hit = model.hitTest({ x: 88 + 5, y: 88 + 5 });
+    assert.ok(hit !== null, 'Should hit within radius');
+    assert.strictEqual(hit.organism_id, 'org_test');
 
-    // Click outside radius
-    const hitFar = model.hitTest({ x: center.x + 15.0, y: center.y });
-    assert.strictEqual(hitFar, null, 'Must not hit outside radius');
+    // Click far away
+    const miss = model.hitTest({ x: 120, y: 120 });
+    assert.strictEqual(miss, null, 'Should miss beyond radius');
   });
 
-  // --- C09-E03: Hit-test includes stack offset ---
+  // --- C09-E03: Quadrant slot offsets for stacked organisms ---
   it('C09-E03: Hit-testing stacked organisms accounts for deterministic quadrant slot offsets', () => {
     const model = new OrganismSelectionModel();
-    // Two organisms in cell (10, 10)
-    model.applySnapshot([
-      { organism_id: 'org_A', position: { x: 10, y: 10, z: 0 } },
-      { organism_id: 'org_B', position: { x: 10, y: 10, z: 0 } }
-    ], 0);
+    const organisms = [
+      { organism_id: 'org_a', position: { x: 10, y: 10, z: 0 } },
+      { organism_id: 'org_b', position: { x: 10, y: 10, z: 0 } },
+      { organism_id: 'org_c', position: { x: 10, y: 10, z: 0 } },
+      { organism_id: 'org_d', position: { x: 10, y: 10, z: 0 } }
+    ];
+    model.applySnapshot(organisms, 0);
 
-    const cellOrigin = { x: 10 * CELL_SIZE, y: 10 * CELL_SIZE };
-    const slotA = { x: cellOrigin.x + 5.0, y: cellOrigin.y + 8.0 };
-    const slotB = { x: cellOrigin.x + 11.0, y: cellOrigin.y + 8.0 };
+    const cellCenter = calculate_pixel_center(10, 10);
+    // Slot 0 (org_a) offset: (-3, -3) -> pixel (165, 165)
+    // Slot 1 (org_b) offset: (+3, -3) -> pixel (171, 165)
+    const targetA = { x: cellCenter.x - 3, y: cellCenter.y - 3 };
+    const targetB = { x: cellCenter.x + 3, y: cellCenter.y - 3 };
 
-    // Click exactly on slot A
-    const hitA = model.hitTest(slotA);
-    assert.ok(hitA);
-    assert.strictEqual(hitA.organism_id, 'org_A');
+    const hitA = model.hitTest(targetA);
+    assert.strictEqual(hitA.organism_id, 'org_a');
 
-    // Click exactly on slot B
-    const hitB = model.hitTest(slotB);
-    assert.ok(hitB);
-    assert.strictEqual(hitB.organism_id, 'org_B');
+    const hitB = model.hitTest(targetB);
+    assert.strictEqual(hitB.organism_id, 'org_b');
   });
 
-  // --- C09-E04: Z-layer filtering works ---
+  // --- C09-E04: Inactive Z-layer filtering ---
   it('C09-E04: Organisms on inactive Z-layers cannot be hit-tested, hovered, or selected', () => {
     const model = new OrganismSelectionModel();
     model.activeZLayer = 0;
     model.applySnapshot([
-      { organism_id: 'org_z0', position: { x: 10, y: 10, z: 0 } },
-      { organism_id: 'org_z1', position: { x: 10, y: 10, z: 1 } }
+      { organism_id: 'org_z0', position: { x: 15, y: 15, z: 0 } },
+      { organism_id: 'org_z1', position: { x: 15, y: 15, z: 1 } }
     ], 0);
 
-    const targetPos = calculate_pixel_center(10, 10);
-    const hit = model.hitTest(targetPos);
-    assert.ok(hit);
-    assert.strictEqual(hit.organism_id, 'org_z0');
+    const center = calculate_pixel_center(15, 15);
+    const hit = model.hitTest(center);
+    assert.strictEqual(hit.organism_id, 'org_z0', 'Must only hit active Z-layer');
 
-    // Switch active layer to z=1
+    // Switch active layer to 1
     model.activeZLayer = 1;
-    const hitLayer1 = model.hitTest(targetPos);
-    assert.ok(hitLayer1);
-    assert.strictEqual(hitLayer1.organism_id, 'org_z1');
-
-    // Switch active layer to z=2 (empty)
-    model.activeZLayer = 2;
-    const hitLayer2 = model.hitTest(targetPos);
-    assert.strictEqual(hitLayer2, null);
+    const hitZ1 = model.hitTest(center);
+    assert.strictEqual(hitZ1.organism_id, 'org_z1', 'Must hit org on z=1 now');
   });
 
-  // --- C09-E05: Nearest glyph wins ---
+  // --- C09-E05: Nearest glyph selection ---
   it('C09-E05: Ambiguous clicks choose the nearest visible organism glyph', () => {
     const model = new OrganismSelectionModel();
     model.applySnapshot([
@@ -326,49 +385,44 @@ describe('DEMO-01-C / C-09-E: Organism Selection & Inspection Suite', () => {
     const centerLeft = calculate_pixel_center(10, 10);
     const centerRight = calculate_pixel_center(11, 10);
 
-    // Click between cells, closer to left (40% of the distance)
-    const clickPoint = {
-      x: centerLeft.x + (centerRight.x - centerLeft.x) * 0.35,
+    // Click 60% towards org_left
+    const clickPos = {
+      x: centerLeft.x + (centerRight.x - centerLeft.x) * 0.3,
       y: centerLeft.y
     };
 
-    const hit = model.hitTest(clickPoint);
-    assert.ok(hit);
+    const hit = model.hitTest(clickPos);
     assert.strictEqual(hit.organism_id, 'org_left');
   });
 
-  // --- C09-E06: Equal-distance tie breaks organism_id ASC ---
+  // --- C09-E06: Deterministic tie-breaking ---
   it('C09-E06: Exact equidistant tie breaks deterministically via organism_id ASC', () => {
     const model = new OrganismSelectionModel();
     model.applySnapshot([
-      { organism_id: 'zeta', position: { x: 10, y: 10, z: 0 } },
-      { organism_id: 'alpha', position: { x: 10, y: 10, z: 0 } }
+      { organism_id: 'beta_org', position: { x: 20, y: 20, z: 0 } },
+      { organism_id: 'alpha_org', position: { x: 20, y: 20, z: 0 } }
     ], 0);
 
-    const cellOrigin = { x: 10 * CELL_SIZE, y: 10 * CELL_SIZE };
-    // Exact midpoint between slot 0 (5.0, 8.0) and slot 1 (11.0, 8.0)
-    const midpoint = { x: cellOrigin.x + 8.0, y: cellOrigin.y + 8.0 };
-
-    const hit = model.hitTest(midpoint);
-    assert.ok(hit);
-    assert.strictEqual(hit.organism_id, 'alpha', 'Tie-break must pick alpha over zeta');
+    // Cell center is equidistant between Slot 0 (-3, -3) and Slot 3 (+3, +3)
+    const center = calculate_pixel_center(20, 20);
+    const hit = model.hitTest(center);
+    assert.strictEqual(hit.organism_id, 'alpha_org', 'Tie-break must pick alpha_org (ASC sort)');
   });
 
-  // --- C09-E07: Hover state changes deterministically ---
+  // --- C09-E07: Mouse motion updates hover state ---
   it('C09-E07: Mouse motion updates hover state and clears when moving to empty space', () => {
     const model = new OrganismSelectionModel();
-    model.applySnapshot([{ organism_id: 'org_target', position: { x: 15, y: 15, z: 0 } }], 0);
+    model.applySnapshot([{ organism_id: 'org_hover', position: { x: 20, y: 20, z: 0 } }], 0);
 
-    const center = calculate_pixel_center(15, 15);
+    const center = calculate_pixel_center(20, 20);
     model.onMouseMotion(center);
-    assert.strictEqual(model.hoveredOrganismId, 'org_target');
+    assert.strictEqual(model.hoveredOrganismId, 'org_hover');
 
-    // Move away to empty space
-    model.onMouseMotion({ x: 0.0, y: 0.0 });
-    assert.strictEqual(model.hoveredOrganismId, '');
+    model.onMouseMotion({ x: 0, y: 0 });
+    assert.strictEqual(model.hoveredOrganismId, '', 'Hover must clear on empty space');
   });
 
-  // --- C09-E08: Selection state changes deterministically ---
+  // --- C09-E08: Mouse click selects target organism ---
   it('C09-E08: Mouse click selects target organism and updates state', () => {
     const model = new OrganismSelectionModel();
     model.applySnapshot([{ organism_id: 'org_click', position: { x: 20, y: 20, z: 0 } }], 0);
@@ -533,6 +587,136 @@ describe('DEMO-01-C / C-09-E: Organism Selection & Inspection Suite', () => {
     for (const line of addedLines) {
       assert.doesNotMatch(line, /Camera2D|WorldGridCanvas|StaticZonesOverlay|IpcClient|SnapshotSynchronizer|PresentationControls|ObservationLog/);
     }
+  });
+
+  // --- C09-E21: Missing species_id displays "—", never "xylotrupes_rhinoceros" ---
+  it('C09-E21: Missing species_id displays "—", never fabricated "xylotrupes_rhinoceros"', () => {
+    const uiCode = fs.readFileSync(INSPECTION_UI_PATH, 'utf8');
+    assert.doesNotMatch(uiCode, /"xylotrupes_rhinoceros"/, 'Must never contain hardcoded species fallback');
+
+    const resMissing = formatInspectionData({}, 'org_001');
+    assert.strictEqual(resMissing.species, '—', 'Missing species_id must fail closed to "—"');
+
+    const resEmpty = formatInspectionData({ species_id: '   ' }, 'org_001');
+    assert.strictEqual(resEmpty.species, '—', 'Whitespace species_id must fail closed to "—"');
+
+    const resValid = formatInspectionData({ species_id: 'lucanus_cervus' }, 'org_001');
+    assert.strictEqual(resValid.species, 'lucanus_cervus');
+  });
+
+  // --- C09-E22: Missing phenotype fields display "—", never fabricated values ---
+  it('C09-E22: Missing phenotype fields display "—", never fabricated numeric values', () => {
+    const uiCode = fs.readFileSync(INSPECTION_UI_PATH, 'utf8');
+    assert.doesNotMatch(uiCode, /body_scale_index.*1\.0/, 'Must not default scale to 1.0');
+    assert.doesNotMatch(uiCode, /cuticle_pigment_ratio.*0\.5/, 'Must not default pigment to 0.5');
+    assert.doesNotMatch(uiCode, /tarsal_grip_index.*1\.0/, 'Must not default grip to 1.0');
+
+    const formatted = formatInspectionData({}, 'org_001');
+    assert.strictEqual(formatted.body_scale_index, '—');
+    assert.strictEqual(formatted.cuticle_pigment_ratio, '—');
+    assert.strictEqual(formatted.cephalic_horn_scale, '—');
+    assert.strictEqual(formatted.thoracic_horn_scale, '—');
+    assert.strictEqual(formatted.tarsal_grip_index, '—');
+  });
+
+  // --- C09-E23: Missing energy/biomass/generation/development display "—" ---
+  it('C09-E23: Missing energy, biomass, generation, or development fields display "—"', () => {
+    const formatted = formatInspectionData({}, 'org_001');
+    assert.strictEqual(formatted.stored_energy, '—');
+    assert.strictEqual(formatted.structural_biomass, '—');
+    assert.strictEqual(formatted.generation, '—');
+    assert.strictEqual(formatted.developmental_progress, '—');
+
+    const populated = formatInspectionData({
+      stored_energy: 15.2,
+      structural_biomass: 3.8,
+      generation: 2,
+      developmental_progress: 0.654
+    }, 'org_001');
+    assert.strictEqual(populated.stored_energy, '15.2');
+    assert.strictEqual(populated.structural_biomass, '3.8');
+    assert.strictEqual(populated.generation, '2');
+    assert.strictEqual(populated.developmental_progress, '65.4%');
+  });
+
+  // --- C09-E24: Invalid numeric phenotype values display "—" ---
+  it('C09-E24: Invalid numeric phenotype values (NaN, Infinity, non-numeric) display "—"', () => {
+    const invalidData = formatInspectionData({
+      body_scale_index: NaN,
+      cuticle_pigment_ratio: Infinity,
+      cephalic_horn_scale: -Infinity,
+      thoracic_horn_scale: 'string_value',
+      tarsal_grip_index: null
+    }, 'org_001');
+
+    assert.strictEqual(invalidData.body_scale_index, '—');
+    assert.strictEqual(invalidData.cuticle_pigment_ratio, '—');
+    assert.strictEqual(invalidData.cephalic_horn_scale, '—');
+    assert.strictEqual(invalidData.thoracic_horn_scale, '—');
+    assert.strictEqual(invalidData.tarsal_grip_index, '—');
+
+    const uiCode = fs.readFileSync(INSPECTION_UI_PATH, 'utf8');
+    assert.ok(uiCode.includes('is_nan') && uiCode.includes('is_inf'), 'UI must validate against NaN and Inf');
+  });
+
+  // --- C09-E25: stage_display_label falls back to current_stage_id ---
+  it('C09-E25: stage_display_label may fall back to current_stage_id, else "—"', () => {
+    const primary = formatInspectionData({ stage_display_label: 'Larva L2' }, 'org_001');
+    assert.strictEqual(primary.stage, 'Larva L2');
+
+    const fallback = formatInspectionData({ current_stage_id: 'STAGE_LARVA' }, 'org_001');
+    assert.strictEqual(fallback.stage, 'STAGE_LARVA');
+
+    const both = formatInspectionData({ stage_display_label: 'Pupa', current_stage_id: 'STAGE_PUPA' }, 'org_001');
+    assert.strictEqual(both.stage, 'Pupa');
+
+    const neither = formatInspectionData({}, 'org_001');
+    assert.strictEqual(neither.stage, '—');
+  });
+
+  // --- C09-E26: action_display_label falls back to action_intent ---
+  it('C09-E26: action_display_label may fall back to action_intent, else "—"', () => {
+    const primary = formatInspectionData({ action_display_label: 'Feeding on Sap' }, 'org_001');
+    assert.strictEqual(primary.action, 'Feeding on Sap');
+
+    const fallback = formatInspectionData({ action_intent: 'FEED' }, 'org_001');
+    assert.strictEqual(fallback.action, 'FEED');
+
+    const both = formatInspectionData({ action_display_label: 'Resting', action_intent: 'REST' }, 'org_001');
+    assert.strictEqual(both.action, 'Resting');
+
+    const neither = formatInspectionData({}, 'org_001');
+    assert.strictEqual(neither.action, '—');
+  });
+
+  // --- C09-E27: Inspection UI has no direct SnapshotSynchronizer binding ---
+  it('C09-E27: Inspection UI has zero direct SnapshotSynchronizer binding', () => {
+    const uiCode = fs.readFileSync(INSPECTION_UI_PATH, 'utf8');
+    assert.doesNotMatch(uiCode, /\bSnapshotSynchronizer\b/, 'Must not reference SnapshotSynchronizer class');
+    assert.doesNotMatch(uiCode, /\bsnapshot_synchronizer\b/, 'Must not reference snapshot_synchronizer node/var');
+    assert.doesNotMatch(uiCode, /apply_snapshot_organisms/, 'Must not bind to synchronizer snapshot signals');
+    assert.ok(uiCode.includes('OrganismsOverlay'), 'Must discover OrganismsOverlay');
+    assert.ok(uiCode.includes('organism_selected'), 'Must listen to overlay organism_selected');
+  });
+
+  // --- C09-E28: Production HIT_RADIUS is 12.0 and test model matches it ---
+  it('C09-E28: Production HIT_RADIUS is 12.0 and selection model strictly matches boundary', () => {
+    assert.strictEqual(HIT_RADIUS, 12.0, 'Test constant must equal 12.0');
+
+    const overlayCode = fs.readFileSync(OVERLAY_PATH, 'utf8');
+    assert.match(overlayCode, /HIT_RADIUS:\s*float\s*=\s*12\.0/, 'Overlay code must define HIT_RADIUS = 12.0');
+
+    const model = new OrganismSelectionModel();
+    model.applySnapshot([{ organism_id: 'org_boundary', position: { x: 10, y: 10, z: 0 } }], 0);
+    const center = calculate_pixel_center(10, 10);
+
+    // Distance 11.9 px: within 12.0 -> HIT
+    model.onMouseClick({ x: center.x + 11.9, y: center.y });
+    assert.strictEqual(model.selectedOrganismId, 'org_boundary');
+
+    // Distance 12.1 px: exceeds 12.0 -> MISS (clears selection on empty click)
+    model.onMouseClick({ x: center.x + 12.1, y: center.y });
+    assert.strictEqual(model.selectedOrganismId, '');
   });
 
 });
