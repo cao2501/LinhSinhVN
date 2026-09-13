@@ -814,11 +814,8 @@ describe('DEMO-01-C / C-08-B: Interactive Controls & Single-Step Flow', () => {
   });
 });
 
-describe('DEMO-01-C / C-08-C: Live Playback Presentation Polling', () => {
-  const worldViewPath = path.resolve(process.cwd(), 'godot/scripts/presentation/world_view.gd');
-  const worldViewContent = fs.readFileSync(worldViewPath, 'utf8');
-
-  // Updated WorldView Model with C-08-C Polling Logic
+// --- WorldViewPollingModel (Hardened FIFO Source Correlation) ---
+// Hardened WorldView Polling Model matching world_view.gd FIFO source tracking & non-poll gating
   class WorldViewPollingModel extends WorldViewModel {
     constructor(ipcClient) {
       super(ipcClient);
@@ -828,511 +825,7 @@ describe('DEMO-01-C / C-08-C: Live Playback Presentation Polling', () => {
       this.currentPlaybackStatus = 'PAUSED';
       this.bridgeFailedActive = false;
 
-      if (this.ipcClient) {
-        this.ipcClient.on('response_received', (res) => this.onIpcResponseReceived(res));
-      }
-    }
-
-    onPlaybackStatusChanged(status) {
-      this.currentPlaybackStatus = status;
-      if (this.currentPlaybackStatus !== 'PLAYING') {
-        this.pollAccumulator = 0.0;
-      }
-    }
-
-    onIpcDisconnected() {
-      super.onIpcDisconnected();
-      this.pollAccumulator = 0.0;
-      this.snapshotPollInFlight = false;
-    }
-
-    onIpcBridgeFailed(_msg) {
-      super.onIpcBridgeFailed(_msg);
-      this.bridgeFailedActive = true;
-      this.pollAccumulator = 0.0;
-      this.snapshotPollInFlight = false;
-    }
-
-    onIpcResponseReceived(res) {
-      const command = String(res.command || '');
-      if (command === 'getSnapshot') {
-        this.snapshotPollInFlight = false;
-      } else if (command === 'reset') {
-        this.pollAccumulator = 0.0;
-        this.snapshotPollInFlight = false;
-        if (Boolean(res.success)) {
-          this.bridgeFailedActive = false;
-        }
-      }
-    }
-
-    process(delta) {
-      super.process(delta);
-
-      // C-08-C Polling
-      if (this.currentPlaybackStatus === 'PLAYING' && this.ipcClient && !this.bridgeFailedActive) {
-        if (this.ipcClient.get_connection_state() === 'CONNECTED') {
-          this.pollAccumulator += delta;
-          if (this.pollAccumulator >= this.POLL_INTERVAL && !this.snapshotPollInFlight) {
-            this.pollAccumulator = 0.0;
-            this.snapshotPollInFlight = true;
-            this.ipcClient.get_snapshot();
-          }
-        } else {
-          this.pollAccumulator = 0.0;
-        }
-      } else {
-        this.pollAccumulator = 0.0;
-      }
-    }
-  }
-
-  test('C08-C01: Polling begins only when playback status is PLAYING', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    assert.equal(ipc.sentCommands.length, 1); // C-08-A initial snapshot
-
-    wv.process(0.15);
-    assert.equal(ipc.sentCommands.length, 1, 'Must not poll while PAUSED');
-
-    wv.onPlaybackStatusChanged('PLAYING');
-    wv.process(0.15);
-    assert.equal(ipc.sentCommands.length, 2, 'Polling begins when PLAYING');
-    assert.equal(ipc.sentCommands[1].command, 'getSnapshot');
-  });
-
-  test('C08-C02: Polling remains inactive while PAUSED', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    assert.equal(wv.currentPlaybackStatus, 'PAUSED');
-
-    wv.process(1.0);
-    assert.equal(ipc.sentCommands.length, 1); // only initial
-  });
-
-  test('C08-C03: Polling requires CONNECTED transport', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    // Transport is CONNECTING
-    wv.process(0.5);
-    assert.equal(ipc.sentCommands.length, 0);
-  });
-
-  test('C08-C04: Polling does not occur while DISCONNECTED', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    ipc.simulateDisconnected();
-    wv.process(0.5);
-    assert.equal(ipc.sentCommands.length, 1); // only initial from earlier
-  });
-
-  test('C08-C05: Polling does not occur while BRIDGE_FAILED', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    ipc.simulateBridgeFailed('SESSION_ERROR');
-    wv.process(0.5);
-    assert.equal(ipc.sentCommands.length, 1); // only initial
-  });
-
-  test('C08-C06: Polling interval is exactly 100ms', () => {
-    assert.match(worldViewContent, /const\s+POLL_INTERVAL:\s*float\s*=\s*0\.1/);
-  });
-
-  test('C08-C07: At most one polling getSnapshot is in-flight', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.12);
-    assert.equal(wv.snapshotPollInFlight, true);
-    assert.equal(ipc.sentCommands.length, 2); // 1 initial + 1 poll
-
-    // Process another 500ms without response
-    wv.process(0.5);
-    assert.equal(ipc.sentCommands.length, 2, 'Must not send another getSnapshot while previous is in-flight');
-  });
-
-  test('C08-C08: A second poll cannot dispatch before the previous getSnapshot response', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.15);
-    assert.equal(ipc.sentCommands.length, 2);
-
-    wv.process(0.3);
-    assert.equal(ipc.sentCommands.length, 2);
-
-    // Response arrives
-    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 5 } } });
-    assert.equal(wv.snapshotPollInFlight, false);
-
-    wv.process(0.15);
-    assert.equal(ipc.sentCommands.length, 3, 'Second poll dispatches after previous response resolved');
-  });
-
-  test('C08-C09: Only getSnapshot responses clear _snapshot_poll_in_flight', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.15);
-    assert.equal(wv.snapshotPollInFlight, true);
-
-    // Other command responses do not clear polling lock
-    ipc.emit('response_received', { success: true, command: 'step' });
-    assert.equal(wv.snapshotPollInFlight, true);
-
-    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
-    assert.equal(wv.snapshotPollInFlight, false);
-  });
-
-  test('C08-C10: play response does not clear polling lock', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.15);
-    assert.equal(wv.snapshotPollInFlight, true);
-
-    ipc.emit('response_received', { success: true, command: 'play' });
-    assert.equal(wv.snapshotPollInFlight, true);
-  });
-
-  test('C08-C11: pause response does not clear polling lock', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.15);
-    assert.equal(wv.snapshotPollInFlight, true);
-
-    ipc.emit('response_received', { success: true, command: 'pause' });
-    assert.equal(wv.snapshotPollInFlight, true);
-  });
-
-  test('C08-C12: step response does not clear polling lock', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.15);
-    assert.equal(wv.snapshotPollInFlight, true);
-
-    ipc.emit('response_received', { success: true, command: 'step' });
-    assert.equal(wv.snapshotPollInFlight, true);
-  });
-
-  test('C08-C13: reset response clears polling lock and halts accumulator', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.15);
-    assert.equal(wv.snapshotPollInFlight, true);
-
-    ipc.emit('response_received', { success: true, command: 'reset', result: { snapshot: { simulation_tick: 0 } } });
-    assert.equal(wv.snapshotPollInFlight, false);
-    assert.equal(wv.pollAccumulator, 0.0);
-  });
-
-  test('C08-C14: disconnect clears polling in-flight state', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.15);
-    assert.equal(wv.snapshotPollInFlight, true);
-
-    ipc.simulateDisconnected();
-    assert.equal(wv.snapshotPollInFlight, false);
-    assert.equal(wv.pollAccumulator, 0.0);
-  });
-
-  test('C08-C15: bridge_failed clears polling in-flight state', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.15);
-    assert.equal(wv.snapshotPollInFlight, true);
-
-    ipc.simulateBridgeFailed('SESSION_ERROR');
-    assert.equal(wv.snapshotPollInFlight, false);
-    assert.equal(wv.pollAccumulator, 0.0);
-    assert.equal(wv.bridgeFailedActive, true);
-  });
-
-  test('C08-C16: PAUSE clears polling accumulator', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.05); // halfway to 0.1s
-    assert.equal(wv.pollAccumulator, 0.05);
-
-    wv.onPlaybackStatusChanged('PAUSED');
-    assert.equal(wv.pollAccumulator, 0.0);
-  });
-
-  test('C08-C17: RESET clears polling accumulator', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.05);
-    assert.equal(wv.pollAccumulator, 0.05);
-
-    ipc.emit('response_received', { success: true, command: 'reset' });
-    assert.equal(wv.pollAccumulator, 0.0);
-  });
-
-  test('C08-C18: Late getSnapshot response after PAUSE does not restart polling', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.15);
-    assert.equal(wv.snapshotPollInFlight, true);
-    assert.equal(ipc.sentCommands.length, 2);
-
-    // User pauses before response arrives
-    wv.onPlaybackStatusChanged('PAUSED');
-
-    // Late snapshot response arrives
-    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 10 } } });
-    assert.equal(wv.snapshotPollInFlight, false);
-
-    wv.process(0.5);
-    assert.equal(ipc.sentCommands.length, 2, 'Must not dispatch further polling while PAUSED');
-  });
-
-  test('C08-C19: Late getSnapshot response after RESET does not restart polling', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.15);
-    assert.equal(wv.snapshotPollInFlight, true);
-
-    // Reset occurs
-    ipc.emit('response_received', { success: true, command: 'reset' });
-    wv.onPlaybackStatusChanged('PAUSED');
-
-    // Late poll response
-    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 1 } } });
-    wv.process(0.5);
-    assert.equal(ipc.sentCommands.length, 2, 'Must not restart polling after reset/paused');
-  });
-
-  test('C08-C20: WorldView never calls step() from polling', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    for (let i = 0; i < 20; i++) {
-      wv.process(0.15);
-      ipc.emit('response_received', { success: true, command: 'getSnapshot' });
-    }
-
-    const steps = ipc.sentCommands.filter(c => c.command === 'step');
-    assert.equal(steps.length, 0, 'Polling must NEVER call step()');
-  });
-
-  test('C08-C21: WorldView never calls play() from polling', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-    wv.process(0.5);
-
-    const plays = ipc.sentCommands.filter(c => c.command === 'play');
-    assert.equal(plays.length, 0);
-  });
-
-  test('C08-C22: WorldView never calls pause() from polling', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-    wv.process(0.5);
-
-    const pauses = ipc.sentCommands.filter(c => c.command === 'pause');
-    assert.equal(pauses.length, 0);
-  });
-
-  test('C08-C23: WorldView never calls reset() from polling', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-    wv.process(0.5);
-
-    const resets = ipc.sentCommands.filter(c => c.command === 'reset');
-    assert.equal(resets.length, 0);
-  });
-
-  test('C08-C24: WorldView never mutates simulation_tick', () => {
-    assert.ok(!worldViewContent.includes('simulation_tick ='));
-    assert.ok(!worldViewContent.includes('tick +='));
-  });
-
-  test('C08-C25: WorldView does not apply snapshots', () => {
-    assert.ok(!worldViewContent.includes('apply_snapshot_organisms'));
-    assert.ok(!worldViewContent.includes('_resolve_snapshot'));
-  });
-
-  test('C08-C26: WorldView does not generate observations', () => {
-    assert.ok(!worldViewContent.includes('ORGANISM_APPEARED'));
-    assert.ok(!worldViewContent.includes('SIMULATION_RESET'));
-  });
-
-  test('C08-C27: Manual SYNC does not manipulate _snapshot_poll_in_flight', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-
-    assert.equal(wv.snapshotPollInFlight, false);
-
-    // Manual sync dispatched by PresentationControls
-    ipc.get_snapshot();
-    assert.equal(wv.snapshotPollInFlight, false, 'Manual sync does not toggle polling in-flight flag');
-  });
-
-  test('C08-C28: C-08-A reconnect remains independent from C-08-C polling', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateDisconnected();
-
-    // In DISCONNECTED, reconnect accumulator advances while polling is halted
-    assert.equal(ipc.get_connection_state(), 'DISCONNECTED');
-    wv.process(1.5);
-
-    assert.equal(wv.reconnectAccumulator, 1.5);
-    assert.equal(wv.pollAccumulator, 0.0);
-  });
-
-  test('C08-C29: Initial connection getSnapshot is not counted as a polling request', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-
-    ipc.simulateConnected();
-    assert.equal(ipc.sentCommands.length, 1);
-    assert.equal(wv.snapshotPollInFlight, false, 'Initial sync must NOT set snapshotPollInFlight');
-  });
-
-  test('C08-C30: A successful reset leaves polling inactive while authoritative playback status is PAUSED', () => {
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-
-    ipc.emit('response_received', { success: true, command: 'reset' });
-    wv.onPlaybackStatusChanged('PAUSED');
-
-    wv.process(0.5);
-    assert.equal(ipc.sentCommands.length, 1, 'Only initial sync, zero polling while PAUSED');
-  });
-
-  test('C08-C31: Polling may observe sparse/latest snapshots without requiring every intermediate tick', () => {
-    // Invariant test: Polling samples at 100ms. If simulation advanced 50 ticks,
-    // getSnapshot simply returns tick 50; WorldView does not try to backfill ticks 1..49.
-    const ipc = new MockIpcClient();
-    const wv = new WorldViewPollingModel(ipc);
-    wv.ready();
-    ipc.simulateConnected();
-    wv.onPlaybackStatusChanged('PLAYING');
-
-    wv.process(0.15);
-    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 50 } } });
-
-    assert.equal(wv.snapshotPollInFlight, false);
-    assert.equal(ipc.sentCommands.length, 2);
-  });
-
-  test('C08-C32: No frozen-domain files modified', () => {
-    // Check git diff against base commit bc56590 (C-08-B commit)
-    const diff = execSync('git diff --name-only bc56590', { encoding: 'utf8' }).trim();
-    const modifiedFiles = diff ? diff.split('\n').map(s => s.trim()) : [];
-
-    const allowed = [
-      'godot/scripts/presentation/world_view.gd',
-      'godot/scripts/presentation/presentation_controls.gd',
-      'tests/demo/demo_c08_integrated_shell.test.js'
-    ];
-
-    for (const f of modifiedFiles) {
-      assert.ok(allowed.includes(f), `Forbidden file modified: ${f}`);
-    }
-  });
-});
-
-describe('DEMO-01-C / C-08-C-H: Hardening Polling Response Correlation', () => {
-  const worldViewPath = path.resolve(process.cwd(), 'godot/scripts/presentation/world_view.gd');
-  const presentationControlsPath = path.resolve(process.cwd(), 'godot/scripts/presentation/presentation_controls.gd');
-  const worldViewContent = fs.readFileSync(worldViewPath, 'utf8');
-  const presentationControlsContent = fs.readFileSync(presentationControlsPath, 'utf8');
-
-  // Hardened WorldView Model with FIFO source tracking & non-poll gating
-  class WorldViewHardenedPollingModel extends WorldViewModel {
-    constructor(ipcClient) {
-      super(ipcClient);
-      this.POLL_INTERVAL = 0.1;
-      this.snapshotPollInFlight = false;
-      this.pollAccumulator = 0.0;
-      this.currentPlaybackStatus = 'PAUSED';
-      this.bridgeFailedActive = false;
-
-      // C-08-C Hardening state
+      // Hardened response correlation & gating state
       this.initialSnapshotPending = false;
       this.manualSyncPendingCount = 0;
       this.pendingSnapshotSources = []; // FIFO: 'INITIAL', 'MANUAL', 'POLL'
@@ -1435,50 +928,515 @@ describe('DEMO-01-C / C-08-C-H: Hardening Polling Response Correlation', () => {
     }
   }
 
-  test('C08-C-H01: Initial getSnapshot pending prevents C-08-C polling from dispatching', () => {
+describe('DEMO-01-C / C-08-C: Live Playback Presentation Polling', () => {
+  const worldViewPath = path.resolve(process.cwd(), 'godot/scripts/presentation/world_view.gd');
+  const presentationControlsPath = path.resolve(process.cwd(), 'godot/scripts/presentation/presentation_controls.gd');
+  const worldViewContent = fs.readFileSync(worldViewPath, 'utf8');
+  const presentationControlsContent = fs.readFileSync(presentationControlsPath, 'utf8');
+
+  test('C08-C01: Polling begins only when playback status is PLAYING', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected(); // initial snapshot queued & dispatched
+    assert.equal(ipc.sentCommands.length, 1);
+
+    // Initial snapshot completes
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } });
+
+    wv.process(0.15);
+    assert.equal(ipc.sentCommands.length, 1, 'Must not poll while PAUSED');
+
+    wv.onPlaybackStatusChanged('PLAYING');
+    wv.process(0.15);
+    assert.equal(ipc.sentCommands.length, 2, 'Polling begins when PLAYING');
+    assert.equal(ipc.sentCommands[1].command, 'getSnapshot');
+  });
+
+  test('C08-C02: Polling remains inactive while PAUSED', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    assert.equal(wv.currentPlaybackStatus, 'PAUSED');
+
+    wv.process(1.0);
+    assert.equal(ipc.sentCommands.length, 1); // only initial
+  });
+
+  test('C08-C03: Polling requires CONNECTED transport', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    // Transport is CONNECTING
+    wv.process(0.5);
+    assert.equal(ipc.sentCommands.length, 0);
+  });
+
+  test('C08-C04: Polling does not occur while DISCONNECTED', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    ipc.simulateDisconnected();
+    wv.process(0.5);
+    assert.equal(ipc.sentCommands.length, 1); // only initial from earlier
+  });
+
+  test('C08-C05: Polling does not occur while BRIDGE_FAILED', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    ipc.simulateBridgeFailed('SESSION_ERROR');
+    wv.process(0.5);
+    assert.equal(ipc.sentCommands.length, 1); // only initial
+  });
+
+  test('C08-C06: Polling interval is exactly 100ms', () => {
+    assert.match(worldViewContent, /const\s+POLL_INTERVAL:\s*float\s*=\s*0\.1/);
+  });
+
+  test('C08-C07: At most one polling getSnapshot is in-flight', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' }); // initial resolved
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.12);
+    assert.equal(wv.snapshotPollInFlight, true);
+    assert.equal(ipc.sentCommands.length, 2); // 1 initial + 1 poll
+
+    // Process another 500ms without response
+    wv.process(0.5);
+    assert.equal(ipc.sentCommands.length, 2, 'Must not send another getSnapshot while previous is in-flight');
+  });
+
+  test('C08-C08: A second poll cannot dispatch before the previous getSnapshot response', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' }); // initial resolved
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15);
+    assert.equal(ipc.sentCommands.length, 2);
+
+    wv.process(0.3);
+    assert.equal(ipc.sentCommands.length, 2);
+
+    // Poll response arrives
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 5 } } });
+    assert.equal(wv.snapshotPollInFlight, false);
+
+    wv.process(0.15);
+    assert.equal(ipc.sentCommands.length, 3, 'Second poll dispatches after previous response resolved');
+  });
+
+  test('C08-C09: Only getSnapshot responses clear _snapshot_poll_in_flight', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' }); // initial resolved
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15);
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    // Other command responses do not clear polling lock
+    ipc.emit('response_received', { success: true, command: 'step' });
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    assert.equal(wv.snapshotPollInFlight, false);
+  });
+
+  test('C08-C10: play response does not clear polling lock', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15);
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    ipc.emit('response_received', { success: true, command: 'play' });
+    assert.equal(wv.snapshotPollInFlight, true);
+  });
+
+  test('C08-C11: pause response does not clear polling lock', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15);
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    ipc.emit('response_received', { success: true, command: 'pause' });
+    assert.equal(wv.snapshotPollInFlight, true);
+  });
+
+  test('C08-C12: step response does not clear polling lock', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15);
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    ipc.emit('response_received', { success: true, command: 'step' });
+    assert.equal(wv.snapshotPollInFlight, true);
+  });
+
+  test('C08-C13: reset response clears polling lock and halts accumulator', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15);
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    ipc.emit('response_received', { success: true, command: 'reset', result: { snapshot: { simulation_tick: 0 } } });
+    assert.equal(wv.snapshotPollInFlight, false);
+    assert.equal(wv.pollAccumulator, 0.0);
+  });
+
+  test('C08-C14: disconnect clears polling in-flight state', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15);
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    ipc.simulateDisconnected();
+    assert.equal(wv.snapshotPollInFlight, false);
+    assert.equal(wv.pollAccumulator, 0.0);
+  });
+
+  test('C08-C15: bridge_failed clears polling in-flight state', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15);
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    ipc.simulateBridgeFailed('SESSION_ERROR');
+    assert.equal(wv.snapshotPollInFlight, false);
+    assert.equal(wv.pollAccumulator, 0.0);
+    assert.equal(wv.bridgeFailedActive, true);
+  });
+
+  test('C08-C16: PAUSE clears polling accumulator', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.05); // halfway to 0.1s
+    assert.equal(wv.pollAccumulator, 0.05);
+
+    wv.onPlaybackStatusChanged('PAUSED');
+    assert.equal(wv.pollAccumulator, 0.0);
+  });
+
+  test('C08-C17: RESET clears polling accumulator', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.05);
+    assert.equal(wv.pollAccumulator, 0.05);
+
+    ipc.emit('response_received', { success: true, command: 'reset' });
+    assert.equal(wv.pollAccumulator, 0.0);
+  });
+
+  test('C08-C18: Late getSnapshot response after PAUSE does not restart polling', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' }); // initial resolved
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15);
+    assert.equal(wv.snapshotPollInFlight, true);
+    assert.equal(ipc.sentCommands.length, 2);
+
+    // User pauses before response arrives
+    wv.onPlaybackStatusChanged('PAUSED');
+
+    // Late snapshot response arrives
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 10 } } });
+    assert.equal(wv.snapshotPollInFlight, false);
+
+    wv.process(0.5);
+    assert.equal(ipc.sentCommands.length, 2, 'Must not dispatch further polling while PAUSED');
+  });
+
+  test('C08-C19: Late getSnapshot response after RESET does not restart polling', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15);
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    // Reset occurs
+    ipc.emit('response_received', { success: true, command: 'reset' });
+    wv.onPlaybackStatusChanged('PAUSED');
+
+    // Late poll response
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 1 } } });
+    wv.process(0.5);
+    assert.equal(ipc.sentCommands.length, 2, 'Must not restart polling after reset/paused');
+  });
+
+  test('C08-C20: WorldView never calls step() from polling', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    for (let i = 0; i < 20; i++) {
+      wv.process(0.15);
+      ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    }
+
+    const steps = ipc.sentCommands.filter(c => c.command === 'step');
+    assert.equal(steps.length, 0, 'Polling must NEVER call step()');
+  });
+
+  test('C08-C21: WorldView never calls play() from polling', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+    wv.process(0.5);
+
+    const plays = ipc.sentCommands.filter(c => c.command === 'play');
+    assert.equal(plays.length, 0);
+  });
+
+  test('C08-C22: WorldView never calls pause() from polling', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+    wv.process(0.5);
+
+    const pauses = ipc.sentCommands.filter(c => c.command === 'pause');
+    assert.equal(pauses.length, 0);
+  });
+
+  test('C08-C23: WorldView never calls reset() from polling', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+    wv.process(0.5);
+
+    const resets = ipc.sentCommands.filter(c => c.command === 'reset');
+    assert.equal(resets.length, 0);
+  });
+
+  test('C08-C24: WorldView never mutates simulation_tick', () => {
+    assert.ok(!worldViewContent.includes('simulation_tick ='));
+    assert.ok(!worldViewContent.includes('tick +='));
+  });
+
+  test('C08-C25: WorldView does not apply snapshots', () => {
+    assert.ok(!worldViewContent.includes('apply_snapshot_organisms'));
+    assert.ok(!worldViewContent.includes('_resolve_snapshot'));
+  });
+
+  test('C08-C26: WorldView does not generate observations', () => {
+    assert.ok(!worldViewContent.includes('ORGANISM_APPEARED'));
+    assert.ok(!worldViewContent.includes('SIMULATION_RESET'));
+  });
+
+  test('C08-C27: Manual SYNC does not manipulate _snapshot_poll_in_flight', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+
+    assert.equal(wv.snapshotPollInFlight, false);
+
+    // Manual sync dispatched by PresentationControls
+    wv.notifyManualSyncRequested();
+    ipc.get_snapshot();
+    assert.equal(wv.snapshotPollInFlight, false, 'Manual sync does not toggle polling in-flight flag');
+  });
+
+  test('C08-C28: C-08-A reconnect remains independent from C-08-C polling', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateDisconnected();
+
+    // In DISCONNECTED, reconnect accumulator advances while polling is halted
+    assert.equal(ipc.get_connection_state(), 'DISCONNECTED');
+    wv.process(1.5);
+
+    assert.equal(wv.reconnectAccumulator, 1.5);
+    assert.equal(wv.pollAccumulator, 0.0);
+  });
+
+  test('C08-C29: Initial connection getSnapshot is not counted as a polling request', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+
+    ipc.simulateConnected();
+    assert.equal(ipc.sentCommands.length, 1);
+    assert.equal(wv.snapshotPollInFlight, false, 'Initial sync must NOT set snapshotPollInFlight');
+  });
+
+  test('C08-C30: A successful reset leaves polling inactive while authoritative playback status is PAUSED', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+
+    ipc.emit('response_received', { success: true, command: 'reset' });
+    wv.onPlaybackStatusChanged('PAUSED');
+
+    wv.process(0.5);
+    assert.equal(ipc.sentCommands.length, 1, 'Only initial sync, zero polling while PAUSED');
+  });
+
+  test('C08-C31: Polling may observe sparse/latest snapshots without requiring every intermediate tick', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15);
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 50 } } });
+
+    assert.equal(wv.snapshotPollInFlight, false);
+    assert.equal(ipc.sentCommands.length, 2);
+  });
+
+  test('C08-C32: No frozen-domain files modified', () => {
+    const diff = execSync('git diff --name-only bc56590', { encoding: 'utf8' }).trim();
+    const modifiedFiles = diff ? diff.split('\n').map(s => s.trim()) : [];
+
+    const allowed = [
+      'godot/scripts/presentation/world_view.gd',
+      'godot/scripts/presentation/presentation_controls.gd',
+      'tests/demo/demo_c08_integrated_shell.test.js'
+    ];
+
+    for (const f of modifiedFiles) {
+      assert.ok(allowed.includes(f), `Forbidden file modified: ${f}`);
+    }
+  });
+});
+
+describe('DEMO-01-C / C-08-C-H: Hardening Polling Response Correlation', () => {
+  const worldViewPath = path.resolve(process.cwd(), 'godot/scripts/presentation/world_view.gd');
+  const presentationControlsPath = path.resolve(process.cwd(), 'godot/scripts/presentation/presentation_controls.gd');
+  const worldViewContent = fs.readFileSync(worldViewPath, 'utf8');
+  const presentationControlsContent = fs.readFileSync(presentationControlsPath, 'utf8');
+
+  test('C08-C-H01: Initial getSnapshot pending prevents C-08-C polling from dispatching (Scenario A.1)', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected(); // INITIAL request sent, pending in queue
 
     assert.equal(wv.initialSnapshotPending, true);
     assert.equal(ipc.sentCommands.length, 1);
 
     wv.onPlaybackStatusChanged('PLAYING');
-    wv.process(0.15); // accumulator reaches 100ms
+    wv.process(1.5); // large delta while INITIAL still pending
 
-    assert.equal(ipc.sentCommands.length, 1, 'Must NOT dispatch polling while initial snapshot is pending');
+    assert.equal(ipc.sentCommands.length, 1, 'Must NOT dispatch polling while INITIAL snapshot is pending');
     assert.equal(wv.snapshotPollInFlight, false);
   });
 
-  test('C08-C-H02: Initial getSnapshot response completes initial-sync state', () => {
+  test('C08-C-H02: Initial getSnapshot response completes initial-sync state (Scenario A.2)', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
 
     assert.equal(wv.initialSnapshotPending, true);
     ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } });
 
-    assert.equal(wv.initialSnapshotPending, false, 'Initial getSnapshot response must complete initial sync state');
+    assert.equal(wv.initialSnapshotPending, false, 'Initial getSnapshot response clears initialSnapshotPending');
     assert.equal(wv.snapshotPollInFlight, false);
   });
 
-  test('C08-C-H03: Polling becomes eligible only after initial synchronization is complete', () => {
+  test('C08-C-H03: Polling becomes eligible only after initial synchronization is complete (Scenario A.3)', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
     wv.onPlaybackStatusChanged('PLAYING');
 
-    // While pending:
-    wv.process(0.2);
+    // While INITIAL is pending, process large delta:
+    wv.process(0.5);
     assert.equal(ipc.sentCommands.length, 1);
 
-    // Complete initial sync:
+    // Complete INITIAL snapshot:
     ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } });
+    assert.equal(wv.initialSnapshotPending, false);
 
-    // Now eligible:
+    // Next 100ms+ process dispatches exactly one POLL:
     wv.process(0.15);
     assert.equal(ipc.sentCommands.length, 2, 'Polling dispatches once initial sync is complete');
     assert.equal(wv.snapshotPollInFlight, true);
@@ -1486,81 +1444,95 @@ describe('DEMO-01-C / C-08-C-H: Hardening Polling Response Correlation', () => {
 
   test('C08-C-H04: A non-poll initial getSnapshot response cannot clear an active polling lock', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
-    ipc.simulateConnected();
+    ipc.simulateConnected(); // INITIAL queued
 
-    // Simulate race condition scenario where both INITIAL and POLL are queued
+    // Simulate edge condition where POLL was queued behind INITIAL
     wv.snapshotPollInFlight = true;
     wv.pendingSnapshotSources.push('POLL');
 
-    // Initial response arrives:
+    // INITIAL response arrives first:
     ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } });
 
-    // Initial response must resolve INITIAL, leaving POLL lock untouched!
+    // INITIAL response clears initialSnapshotPending but MUST NOT clear snapshotPollInFlight!
     assert.equal(wv.initialSnapshotPending, false);
-    assert.equal(wv.snapshotPollInFlight, true, 'Initial getSnapshot response must NOT clear active polling lock');
+    assert.equal(wv.snapshotPollInFlight, true, 'INITIAL getSnapshot response must NOT clear active polling lock');
   });
 
-  test('C08-C-H05: Manual SYNC pending cannot cause _snapshot_poll_in_flight to clear prematurely', () => {
+  test('C08-C-H05: Manual SYNC response cannot clear active polling lock (Scenario B)', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
-    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } }); // initial resolved
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' }); // INITIAL resolved
 
-    // Manual sync dispatched
+    wv.onPlaybackStatusChanged('PLAYING');
+    wv.process(0.15); // POLL dispatched
+    assert.equal(wv.snapshotPollInFlight, true);
+    assert.equal(ipc.sentCommands.length, 2);
+
+    // MANUAL SYNC requested while POLL in flight
     wv.notifyManualSyncRequested();
+    ipc.get_snapshot();
     assert.equal(wv.manualSyncPendingCount, 1);
+    assert.equal(ipc.sentCommands.length, 3);
 
-    // Simulate poll in-flight race
-    wv.snapshotPollInFlight = true;
-    wv.pendingSnapshotSources.push('POLL');
+    // In FIFO queue: [POLL, MANUAL]. But simulate race where MANUAL response arrives:
+    // If MANUAL arrived, it decrements manualSyncPendingCount, leaving snapshotPollInFlight true!
+    const pollIndex = wv.pendingSnapshotSources.indexOf('POLL');
+    const manualIndex = wv.pendingSnapshotSources.indexOf('MANUAL');
+    assert.ok(pollIndex !== -1 && manualIndex !== -1);
 
-    // Manual SYNC response arrives first:
+    // Deliver first response (POLL):
     ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 5 } } });
+    assert.equal(wv.snapshotPollInFlight, false, 'POLL response releases polling lock');
+    assert.equal(wv.manualSyncPendingCount, 1, 'Manual sync remains pending');
 
-    assert.equal(wv.manualSyncPendingCount, 0);
-    assert.equal(wv.snapshotPollInFlight, true, 'Manual SYNC response must NOT clear polling lock prematurely');
+    // Deliver second response (MANUAL):
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 6 } } });
+    assert.equal(wv.manualSyncPendingCount, 0, 'Manual sync resolved');
   });
 
   test('C08-C-H06: Manual SYNC and polling cannot result in two outstanding C-08-C polling requests', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
     ipc.emit('response_received', { success: true, command: 'getSnapshot' });
-
     wv.onPlaybackStatusChanged('PLAYING');
 
     // Manual SYNC is pending
     wv.notifyManualSyncRequested();
     assert.equal(wv.manualSyncPendingCount, 1);
 
-    wv.process(0.5); // long delta
+    wv.process(1.0); // large delta
     assert.equal(ipc.sentCommands.length, 1, 'Polling must not dispatch while manual SYNC is pending');
     assert.equal(wv.snapshotPollInFlight, false);
   });
 
-  test('C08-C-H07: Two consecutive polling intervals cannot create two outstanding polling requests', () => {
+  test('C08-C-H07: Repeated process() calls while poll response is pending never produce >1 polling request (Scenario C)', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
     ipc.emit('response_received', { success: true, command: 'getSnapshot' });
     wv.onPlaybackStatusChanged('PLAYING');
 
-    wv.process(0.15); // poll 1 dispatches
+    wv.process(0.15); // POLL 1 dispatched
     assert.equal(ipc.sentCommands.length, 2);
     assert.equal(wv.snapshotPollInFlight, true);
 
-    wv.process(0.5); // interval passes again without response
-    assert.equal(ipc.sentCommands.length, 2, 'Cannot dispatch second poll while first is in-flight');
+    // Process many times without response
+    for (let i = 0; i < 20; i++) {
+      wv.process(0.2);
+    }
+    assert.equal(ipc.sentCommands.length, 2, 'Never produce >1 outstanding polling request');
   });
 
   test('C08-C-H08: Late initial getSnapshot response after polling eligibility cannot create another polling request', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
     wv.onPlaybackStatusChanged('PLAYING');
@@ -1569,17 +1541,17 @@ describe('DEMO-01-C / C-08-C-H: Hardening Polling Response Correlation', () => {
     // Late initial response arrives
     ipc.emit('response_received', { success: true, command: 'getSnapshot' });
 
-    assert.equal(ipc.sentCommands.length, sentBefore, 'Response arrival must not create a polling request');
+    assert.equal(ipc.sentCommands.length, sentBefore, 'Response arrival must not autonomously create a polling request');
   });
 
-  test('C08-C-H09: Late manual SYNC response cannot release an unrelated polling lock', () => {
+  test('C08-C-H09: A late manual response cannot release an unrelated active polling lock', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
     ipc.emit('response_received', { success: true, command: 'getSnapshot' });
 
-    // Manual SYNC dispatched then poll dispatched
+    // Set up queue with [MANUAL, POLL] to simulate out-of-order race
     wv.notifyManualSyncRequested();
     wv.snapshotPollInFlight = true;
     wv.pendingSnapshotSources.push('POLL');
@@ -1587,15 +1559,16 @@ describe('DEMO-01-C / C-08-C-H: Hardening Polling Response Correlation', () => {
     // Manual sync response arrives
     ipc.emit('response_received', { success: true, command: 'getSnapshot' });
     assert.equal(wv.snapshotPollInFlight, true, 'Late manual SYNC response cannot release polling lock');
+    assert.equal(wv.manualSyncPendingCount, 0);
 
     // Then polling response arrives
     ipc.emit('response_received', { success: true, command: 'getSnapshot' });
-    assert.equal(wv.snapshotPollInFlight, false, 'Polling response releases polling lock');
+    assert.equal(wv.snapshotPollInFlight, false, 'Actual polling response releases polling lock');
   });
 
-  test('C08-C-H10: Late polling response correctly releases the polling lock', () => {
+  test('C08-C-H10: Actual POLL response releases snapshotPollInFlight', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
     ipc.emit('response_received', { success: true, command: 'getSnapshot' });
@@ -1604,94 +1577,119 @@ describe('DEMO-01-C / C-08-C-H: Hardening Polling Response Correlation', () => {
     wv.process(0.15); // poll dispatches
     assert.equal(wv.snapshotPollInFlight, true);
 
-    // Late response arrives:
+    // Poll response arrives:
     ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 10 } } });
-    assert.equal(wv.snapshotPollInFlight, false);
+    assert.equal(wv.snapshotPollInFlight, false, 'POLL response releases snapshotPollInFlight');
   });
 
-  test('C08-C-H11: PAUSE during polling prevents new polling', () => {
+  test('C08-C-H11: PAUSE prevents subsequent polling (Scenario D)', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
     ipc.emit('response_received', { success: true, command: 'getSnapshot' });
     wv.onPlaybackStatusChanged('PLAYING');
 
-    wv.process(0.15); // poll 1 dispatches
-    ipc.emit('response_received', { success: true, command: 'getSnapshot' }); // poll 1 resolves
+    wv.process(0.15); // POLL 1 dispatches
+    assert.equal(ipc.sentCommands.length, 2);
 
+    // PAUSE occurs while poll in flight
     wv.onPlaybackStatusChanged('PAUSED');
-    wv.process(0.5);
-    assert.equal(ipc.sentCommands.length, 2, 'No new polls while PAUSED');
     assert.equal(wv.pollAccumulator, 0.0);
+
+    // Poll response arrives
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    assert.equal(wv.snapshotPollInFlight, false);
+
+    // Process many times
+    for (let i = 0; i < 15; i++) {
+      wv.process(0.2);
+    }
+    assert.equal(ipc.sentCommands.length, 2, 'No second poll after PAUSE');
   });
 
-  test('C08-C-H12: RESET during polling prevents new polling', () => {
+  test('C08-C-H12: RESET prevents subsequent polling (Scenario E)', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
     ipc.emit('response_received', { success: true, command: 'getSnapshot' });
     wv.onPlaybackStatusChanged('PLAYING');
 
-    wv.process(0.15); // poll 1 in flight
+    wv.process(0.15); // POLL 1 in flight
     assert.equal(wv.snapshotPollInFlight, true);
 
+    // RESET response arrives
     ipc.emit('response_received', { success: true, command: 'reset' });
+    wv.onPlaybackStatusChanged('PAUSED');
+
     assert.equal(wv.snapshotPollInFlight, false);
     assert.equal(wv.pendingSnapshotSources.length, 0);
     assert.equal(wv.pollAccumulator, 0.0);
+
+    // Process many times
+    for (let i = 0; i < 15; i++) {
+      wv.process(0.2);
+    }
+    assert.equal(ipc.sentCommands.length, 2, 'No second poll after RESET');
   });
 
-  test('C08-C-H13: DISCONNECTED during polling prevents new polling', () => {
+  test('C08-C-H13: DISCONNECTED prevents subsequent polling (Scenario F)', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
     ipc.emit('response_received', { success: true, command: 'getSnapshot' });
     wv.onPlaybackStatusChanged('PLAYING');
 
-    wv.process(0.15); // poll 1 in flight
+    wv.process(0.15); // POLL 1 in flight
+    assert.equal(wv.snapshotPollInFlight, true);
+
     ipc.simulateDisconnected();
-
     assert.equal(wv.snapshotPollInFlight, false);
     assert.equal(wv.pendingSnapshotSources.length, 0);
     assert.equal(wv.pollAccumulator, 0.0);
 
-    wv.process(0.5);
-    assert.equal(ipc.sentCommands.length, 2, 'No polls during DISCONNECTED');
+    // Process many times
+    for (let i = 0; i < 15; i++) {
+      wv.process(0.2);
+    }
+    assert.equal(ipc.sentCommands.length, 2, 'No second poll while DISCONNECTED');
   });
 
-  test('C08-C-H14: BRIDGE_FAILED during polling prevents new polling', () => {
+  test('C08-C-H14: BRIDGE_FAILED prevents subsequent polling (Scenario G)', () => {
     const ipc = new MockIpcClient();
-    const wv = new WorldViewHardenedPollingModel(ipc);
+    const wv = new WorldViewPollingModel(ipc);
     wv.ready();
     ipc.simulateConnected();
     ipc.emit('response_received', { success: true, command: 'getSnapshot' });
     wv.onPlaybackStatusChanged('PLAYING');
 
-    wv.process(0.15); // poll 1 in flight
-    ipc.emit('bridge_failed', 'Sim error');
+    wv.process(0.15); // POLL 1 in flight
+    ipc.simulateBridgeFailed('Sim error');
 
     assert.equal(wv.bridgeFailedActive, true);
     assert.equal(wv.snapshotPollInFlight, false);
     assert.equal(wv.pendingSnapshotSources.length, 0);
 
-    wv.process(0.5);
-    assert.equal(ipc.sentCommands.length, 2, 'No polls during BRIDGE_FAILED');
+    // Process many times
+    for (let i = 0; i < 15; i++) {
+      wv.process(0.2);
+    }
+    assert.equal(ipc.sentCommands.length, 2, 'No second poll while BRIDGE_FAILED');
   });
 
-  test('C08-C-H15: No IPC protocol changes', () => {
+  test('C08-C-H15: IPC protocol remains unchanged', () => {
     const diff = execSync('git diff 4d808f3 godot/scripts/ipc/ipc_client.gd', { encoding: 'utf8' }).trim();
     assert.equal(diff, '', 'ipc_client.gd must have zero changes');
   });
 
-  test('C08-C-H16: No SnapshotSynchronizer changes', () => {
+  test('C08-C-H16: SnapshotSynchronizer remains untouched', () => {
     const diff = execSync('git diff 4d808f3 godot/scripts/presentation/snapshot_synchronizer.gd', { encoding: 'utf8' }).trim();
     assert.equal(diff, '', 'snapshot_synchronizer.gd must have zero changes');
   });
 
-  test('C08-C-H17: No simulation authority added to WorldView', () => {
+  test('C08-C-H17: WorldView still has zero simulation authority', () => {
     assert.ok(!worldViewContent.includes('ipc_client.step()'), 'WorldView must not call step()');
     assert.ok(!worldViewContent.includes('ipc_client.play()'), 'WorldView must not call play()');
     assert.ok(!worldViewContent.includes('ipc_client.pause()'), 'WorldView must not call pause()');
@@ -1699,7 +1697,7 @@ describe('DEMO-01-C / C-08-C-H: Hardening Polling Response Correlation', () => {
     assert.ok(!worldViewContent.includes('simulation_tick ='), 'WorldView must not mutate simulation_tick');
   });
 
-  test('C08-C-H18: No frozen-domain files modified', () => {
+  test('C08-C-H18: No frozen-domain file modified', () => {
     const diff = execSync('git diff --name-only 4d808f3', { encoding: 'utf8' }).trim();
     const modifiedFiles = diff ? diff.split('\n').map(s => s.trim()) : [];
 
