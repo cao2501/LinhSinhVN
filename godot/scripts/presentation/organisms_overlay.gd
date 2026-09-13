@@ -1,14 +1,13 @@
-class_name OrganismsOverlay
-extends Node2D
-
 # ==============================================================================
-# LinhSinhVN Presentation Shell — DEMO-01 Organisms Presentation Overlay
+# LinhSinhVN — DEMO-01-C / C-03: Organisms Presentation Overlay
+# File: godot/scripts/presentation/organisms_overlay.gd
+# Base: 4bdf2ae
 #
-# Checkpoint: DEMO-01-C / C-03 Organism Presentation
-#
-# ARCHITECTURAL CONTRACT (Option B - Single CanvasItem Renderer):
-# - Sole CanvasItem renderer for all organisms; zero child Node2D per organism.
-# - ZERO simulation authority: does not pathfind, move, or advance simulation.
+# PRESENTATION-ONLY VISUAL LAYER.
+# - Renders organism markers on the 800x800 world canvas via single _draw() call.
+# - ZERO child nodes per organism (Option B locked).
+# - ZERO visual scaling: fixed dimensions per lifecycle stage regardless of stack count.
+# - ZERO simulation authority: no IPC calls, no movement, no lifecycle calculation.
 # - ZERO biological inference: no thresholding on stored_energy or biomass.
 # - Strict developmental_progress validation without source data mutation.
 # - Pure, deterministic coordinate-to-pixel placement and same-cell stacking.
@@ -102,7 +101,7 @@ func _draw() -> void:
 			cell_groups[key] = []
 		cell_groups[key].append(org)
 
-	# 2. Render each cell group with deterministic stacking
+	# 2. Render each cell group with deterministic stacking (pure position offsets, zero scaling)
 	for key in cell_groups.keys():
 		var group: Array = cell_groups[key]
 		# Deterministic sort by organism_id ASC (code-point lexical)
@@ -117,25 +116,25 @@ func _draw() -> void:
 		var origin: Vector2 = Config.world_to_pixel(Vector2i(cell_x, cell_y))
 
 		if count == 1:
-			_draw_organism(group[0], origin + Vector2(8.0, 8.0), 1.0)
+			_draw_organism(group[0], origin + Vector2(8.0, 8.0))
 		elif count == 2:
-			_draw_organism(group[0], origin + Vector2(5.0, 8.0), 0.8)
-			_draw_organism(group[1], origin + Vector2(11.0, 8.0), 0.8)
+			_draw_organism(group[0], origin + Vector2(5.0, 8.0))
+			_draw_organism(group[1], origin + Vector2(11.0, 8.0))
 		elif count == 3:
-			_draw_organism(group[0], origin + Vector2(5.0, 5.0), 0.75)
-			_draw_organism(group[1], origin + Vector2(11.0, 5.0), 0.75)
-			_draw_organism(group[2], origin + Vector2(8.0, 11.0), 0.75)
+			_draw_organism(group[0], origin + Vector2(5.0, 5.0))
+			_draw_organism(group[1], origin + Vector2(11.0, 5.0))
+			_draw_organism(group[2], origin + Vector2(8.0, 11.0))
 		elif count == 4:
-			_draw_organism(group[0], origin + Vector2(5.0, 5.0), 0.7)
-			_draw_organism(group[1], origin + Vector2(11.0, 5.0), 0.7)
-			_draw_organism(group[2], origin + Vector2(5.0, 11.0), 0.7)
-			_draw_organism(group[3], origin + Vector2(11.0, 11.0), 0.7)
+			_draw_organism(group[0], origin + Vector2(5.0, 5.0))
+			_draw_organism(group[1], origin + Vector2(11.0, 5.0))
+			_draw_organism(group[2], origin + Vector2(5.0, 11.0))
+			_draw_organism(group[3], origin + Vector2(11.0, 11.0))
 		else:
-			# N > 4: Render top deterministic organism centered + draw count badge
-			_draw_organism(group[0], origin + Vector2(8.0, 8.0), 0.9)
+			# N > 4: Render top deterministic organism centered + draw count badge with text
+			_draw_organism(group[0], origin + Vector2(8.0, 8.0))
 			_draw_stack_badge(origin, count - 1)
 
-func _draw_organism(org: Dictionary, center: Vector2, scale_factor: float) -> void:
+func _draw_organism(org: Dictionary, center: Vector2) -> void:
 	var is_alive: bool = bool(org.get("is_alive", true))
 	var stage_id: String = String(org.get("current_stage_id", "STAGE_EGG"))
 	var sex: String = String(org.get("sex", "ASEXUAL"))
@@ -156,61 +155,81 @@ func _draw_organism(org: Dictionary, center: Vector2, scale_factor: float) -> vo
 		fill_color = colors["fill"]
 		outline_color = colors["outline"]
 
-	# 1. Render Fixed Stage Glyph
+	# 1. Render 100% Fixed Stage Glyph Dimensions (ZERO scaling)
 	match stage_id:
 		"STAGE_EGG":
-			var r: float = 3.5 * scale_factor
+			var r: float = 3.5
 			draw_circle(center, r, fill_color)
 			draw_arc(center, r, 0.0, TAU, 16, outline_color, 1.0)
 		"STAGE_LARVA":
-			var sz: Vector2 = Vector2(10.0, 6.0) * scale_factor
+			var sz: Vector2 = Vector2(10.0, 6.0)
 			var rect: Rect2 = Rect2(center - sz * 0.5, sz)
 			draw_rect(rect, fill_color, true)
 			draw_rect(rect, outline_color, false, 1.0)
 		"STAGE_PUPA":
-			var sz: Vector2 = Vector2(10.0, 7.0) * scale_factor
+			var sz: Vector2 = Vector2(10.0, 7.0)
 			var rect: Rect2 = Rect2(center - sz * 0.5, sz)
 			draw_rect(rect, fill_color, true)
 			draw_rect(rect, outline_color, false, 1.2)
 		"STAGE_ADULT":
-			var sz: Vector2 = Vector2(12.0, 10.0) * scale_factor
+			var sz: Vector2 = Vector2(12.0, 10.0)
 			var rect: Rect2 = Rect2(center - sz * 0.5, sz)
 			draw_rect(rect, fill_color, true)
 			draw_rect(rect, outline_color, false, 1.5)
 		_:
 			# Fallback glyph
-			draw_circle(center, 3.0 * scale_factor, fill_color)
+			draw_circle(center, 3.0, fill_color)
 
-	# 2. Render Sex Accent Ring (outer indicator)
+	# 2. Render Sex Accent Ring (Fixed Radius)
 	if is_alive:
-		var accent_r: float = 5.5 * scale_factor
+		var accent_r: float = 5.5
 		draw_arc(center, accent_r, 0.0, TAU, 16, sex_color, 1.0)
 
-	# 3. Render Developmental Progress Arc (Strict Validation)
-	if is_alive and progress_variant != null and (typeof(progress_variant) == TYPE_FLOAT or typeof(progress_variant) == TYPE_INT):
-		var p: float = float(progress_variant)
-		if not is_nan(p) and not is_inf(p) and p >= 0.0 and p <= 1.0:
+	# 3. Render Developmental Progress Arc (Strict Contract Validation)
+	# Valid: numeric, finite, not NaN, 0.0 <= p <= 1.0.
+	# p == 0.0: valid -> do NOT draw arc, do NOT warn.
+	# p > 0.0: valid -> draw arc from 0 to p * TAU.
+	# Invalid: negative, >1, NaN, Inf, non-numeric -> push_warning, do NOT draw arc.
+	if is_alive:
+		var is_numeric: bool = (typeof(progress_variant) == TYPE_FLOAT or typeof(progress_variant) == TYPE_INT)
+		var is_valid: bool = false
+		var p: float = 0.0
+
+		if is_numeric:
+			p = float(progress_variant)
+			if not is_nan(p) and not is_inf(p) and p >= 0.0 and p <= 1.0:
+				is_valid = true
+
+		if not is_valid:
+			push_warning("[OrganismsOverlay] Invalid developmental_progress %s for organism %s — omitted arc" % [str(progress_variant), str(org.get("organism_id", "unknown"))])
+		else:
 			if p > 0.0:
-				var arc_r: float = 6.8 * scale_factor
+				var arc_r: float = 6.8
 				var end_angle: float = p * TAU
 				draw_arc(center, arc_r, -PI * 0.5, -PI * 0.5 + end_angle, 20, Color(0.2, 0.8, 0.9, 0.8), 1.2)
-		else:
-			push_warning("[OrganismsOverlay] Invalid developmental_progress %s for %s — omitted arc" % [str(progress_variant), str(org.get("organism_id", ""))])
 
-	# 4. Render Action Intent Indicator Dot (Top-Right)
+	# 4. Render Action Intent Indicator Dot (Fixed Top-Right Offset & Radius)
 	if is_alive:
 		var action_color: Color = ACTION_COLORS.get(action_intent, Color(0.7, 0.7, 0.7, 1.0))
-		var dot_pos: Vector2 = center + Vector2(4.5, -4.5) * scale_factor
-		draw_circle(dot_pos, 1.5 * scale_factor, action_color)
+		var dot_pos: Vector2 = center + Vector2(4.5, -4.5)
+		draw_circle(dot_pos, 1.5, action_color)
 
-	# 5. Render Dead Organism 'X' Cross Marker
+	# 5. Render Dead Organism 'X' Cross Marker (Fixed Extent)
 	if not is_alive:
-		var x_half: float = 4.0 * scale_factor
+		var x_half: float = 4.0
 		draw_line(center - Vector2(x_half, x_half), center + Vector2(x_half, x_half), Color(0.3, 0.3, 0.3, 0.9), 1.5)
 		draw_line(center - Vector2(-x_half, x_half), center + Vector2(-x_half, x_half), Color(0.3, 0.3, 0.3, 0.9), 1.5)
 
 func _draw_stack_badge(origin: Vector2, extra_count: int) -> void:
-	# Subtle badge at top-right corner of cell
-	var badge_pos: Vector2 = origin + Vector2(13.0, 3.0)
-	draw_circle(badge_pos, 2.5, Color(0.2, 0.2, 0.2, 0.8))
-	draw_arc(badge_pos, 2.5, 0.0, TAU, 12, Color(0.9, 0.9, 0.9, 0.9), 1.0)
+	# Visible badge at top-right corner of cell indicating hidden count "+N"
+	var badge_pos: Vector2 = origin + Vector2(12.0, 4.0)
+	var badge_text: String = "+%d" % extra_count
+
+	# Circular badge backing
+	draw_circle(badge_pos, 4.0, Color(0.15, 0.15, 0.15, 0.9))
+	draw_arc(badge_pos, 4.0, 0.0, TAU, 12, Color(1.0, 1.0, 1.0, 0.95), 1.0)
+
+	# Text rendering using Godot built-in fallback font
+	var font: Font = ThemeDB.fallback_font
+	if font != null:
+		draw_string(font, badge_pos + Vector2(-3.0, 3.0), badge_text, HORIZONTAL_ALIGNMENT_CENTER, -1, 7, Color.WHITE)

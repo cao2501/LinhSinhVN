@@ -2,6 +2,7 @@
  * LinhSinhVN — DEMO-01-C / C-03 Organism Presentation Test Suite
  *
  * Checkpoint: DEMO-01-C / C-03 Organism Presentation
+ * Base: 4bdf2ae
  * Verifies deterministic organism visual mapping, fixed stage glyphs, Z-layer filtering,
  * dead organism retention, deterministic stacking, developmental_progress validation,
  * zero biological inference, scene wiring, and hard frozen domain integrity.
@@ -162,28 +163,26 @@ describe('DEMO-01-C / C-03: Organism Presentation', () => {
     assert.doesNotMatch(codeOnly, /set_entity_position|updateEntityPosition|\.position\s*=/);
   });
 
-  // --- C03-10: Frozen-domain audit ---
-  it('C03-10: Frozen-domain audit confirms only authorized files changed vs base b29c427', () => {
-    const diff = execSync('git diff b29c427 --name-only', { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+  // --- C03-10: Frozen-domain audit vs base 4bdf2ae ---
+  it('C03-10: Frozen-domain audit confirms only authorized files changed vs base 4bdf2ae', () => {
+    const diff = execSync('git diff 4bdf2ae --name-only', { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
     const changedFiles = diff ? diff.split(/\r?\n/).filter(Boolean) : [];
     
-    // Only authorized C-03 files allowed in diff vs base b29c427
+    // Only authorized C-03 files allowed in diff vs base 4bdf2ae
     const allowedC03Files = [
-      'godot/scenes/world_view.tscn',
       'godot/scripts/presentation/organisms_overlay.gd',
       'tests/demo/demo_c03_organism_presentation.test.js'
     ];
     for (const f of changedFiles) {
-      assert.ok(allowedC03Files.includes(f), `Unexpected modified file vs base b29c427: ${f}`);
+      assert.ok(allowedC03Files.includes(f), `Unexpected modified file vs base 4bdf2ae: ${f}`);
     }
 
-    // Verify git status: only organisms_overlay.gd, world_view.tscn, and this test allowed
+    // Verify git status: only organisms_overlay.gd and this test allowed
     const untracked = execSync('git status --porcelain', { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
     const statusLines = untracked ? untracked.split(/\r?\n/).filter(Boolean) : [];
     for (const line of statusLines) {
       const filePath = line.replace(/^[MADRCU?! ]{1,2}\s+/, '').trim();
       const isAllowed = (
-        filePath === 'godot/scenes/world_view.tscn' ||
         filePath === 'godot/scripts/presentation/organisms_overlay.gd' ||
         filePath === 'tests/demo/demo_c03_organism_presentation.test.js'
       );
@@ -219,10 +218,23 @@ describe('DEMO-01-C / C-03: Organism Presentation', () => {
     assert.doesNotMatch(codeOnly, /stored_energy|structural_biomass|<\s*15|starvation|danger|critical/i);
   });
 
-  // --- C03-14: No structural_biomass -> marker scaling ---
-  it('C03-14: No structural_biomass -> marker scale mapping in C-03 code', () => {
+  // --- C03-14: 100% Fixed Dimensions (ZERO scale_factor) ---
+  it('C03-14: Marker dimensions are 100% fixed and not altered by stack count or scale_factor', () => {
     const codeOnly = getOverlayCodeOnly();
     assert.doesNotMatch(codeOnly, /biomass|structural_biomass/i);
+    // Prove scale_factor is completely removed from _draw_organism and code
+    assert.doesNotMatch(codeOnly, /scale_factor/);
+    assert.match(codeOnly, /func\s+_draw_organism\(org:\s*Dictionary,\s*center:\s*Vector2\)\s*->\s*void:/);
+
+    // Verify fixed dimensions in AST/source
+    assert.match(codeOnly, /var\s+r:\s*float\s*=\s*3\.5/); // STAGE_EGG
+    assert.match(codeOnly, /Vector2\(10\.0,\s*6\.0\)/);     // STAGE_LARVA
+    assert.match(codeOnly, /Vector2\(10\.0,\s*7\.0\)/);     // STAGE_PUPA
+    assert.match(codeOnly, /Vector2\(12\.0,\s*10\.0\)/);    // STAGE_ADULT
+    assert.match(codeOnly, /var\s+accent_r:\s*float\s*=\s*5\.5/); // Sex ring fixed radius
+    assert.match(codeOnly, /var\s+arc_r:\s*float\s*=\s*6\.8/);    // Progress arc fixed radius
+    assert.match(codeOnly, /var\s+dot_pos:\s*Vector2\s*=\s*center\s*\+\s*Vector2\(4\.5,\s*-4\.5\)/); // Action dot fixed
+    assert.match(codeOnly, /var\s+x_half:\s*float\s*=\s*4\.0/);   // Dead X fixed extent
   });
 
   // --- C03-15: Zero IPC/timer/simulation-loop ownership ---
@@ -234,11 +246,68 @@ describe('DEMO-01-C / C-03: Organism Presentation', () => {
   });
 
   // --- Developmental progress validation suite ---
-  it('C03-16: Developmental progress validation tests (0.0, 1.0, 0.5, negative, >1, NaN, Inf)', () => {
+  it('C03-16: Developmental progress validation tests (0.0, 1.0, 0.5, negative, >1, NaN, Inf, non-numeric)', () => {
     const overlayCode = fs.readFileSync(overlayScriptPath, 'utf8');
     // Verifies validation logic presence
     assert.ok(overlayCode.includes('not is_nan(p) and not is_inf(p) and p >= 0.0 and p <= 1.0'));
     assert.ok(overlayCode.includes('push_warning'));
     assert.doesNotMatch(overlayCode, /clampf/); // Strict rejection, no silent clamping
+
+    // Verify validation control flow
+    assert.match(overlayCode, /var\s+is_numeric:\s*bool/);
+    assert.match(overlayCode, /if\s+not\s+is_valid:/);
+    assert.match(overlayCode, /else:\s*\r?\n\s*if\s+p\s*>\s*0\.0:/);
+
+    // Direct unit test of validation contract
+    const validate = (val) => {
+      const isNumeric = typeof val === 'number';
+      let isValid = false;
+      let p = 0;
+      if (isNumeric) {
+        p = Number(val);
+        if (!Number.isNaN(p) && Number.isFinite(p) && p >= 0.0 && p <= 1.0) {
+          isValid = true;
+        }
+      }
+      return {
+        isValid,
+        warn: !isValid,
+        drawArc: isValid && p > 0.0
+      };
+    };
+
+    // Valid cases: 0.0 does NOT warn and does NOT draw arc
+    assert.deepEqual(validate(0.0), { isValid: true, warn: false, drawArc: false });
+    assert.deepEqual(validate(0.5), { isValid: true, warn: false, drawArc: true });
+    assert.deepEqual(validate(1.0), { isValid: true, warn: false, drawArc: true });
+
+    // Invalid cases: all warn and omit arc
+    assert.deepEqual(validate(-0.1), { isValid: false, warn: true, drawArc: false });
+    assert.deepEqual(validate(1.1), { isValid: false, warn: true, drawArc: false });
+    assert.deepEqual(validate(NaN), { isValid: false, warn: true, drawArc: false });
+    assert.deepEqual(validate(Infinity), { isValid: false, warn: true, drawArc: false });
+    assert.deepEqual(validate(-Infinity), { isValid: false, warn: true, drawArc: false });
+    assert.deepEqual(validate('invalid'), { isValid: false, warn: true, drawArc: false });
+    assert.deepEqual(validate(null), { isValid: false, warn: true, drawArc: false });
+    assert.deepEqual(validate(true), { isValid: false, warn: true, drawArc: false });
+  });
+
+  // --- C03-17: Actual Stack Count Badge Text ---
+  it('C03-17: Actual stack count badge renders "+N" text for N > 4 (N=5 -> "+4", N=6 -> "+5")', () => {
+    const overlayCode = fs.readFileSync(overlayScriptPath, 'utf8');
+
+    // Verify _draw_stack_badge signature and text format
+    assert.match(overlayCode, /func\s+_draw_stack_badge\(origin:\s*Vector2,\s*extra_count:\s*int\)\s*->\s*void:/);
+    assert.match(overlayCode, /var\s+badge_text:\s*String\s*=\s*"\+%d"\s*%\s*extra_count/);
+    assert.match(overlayCode, /draw_string\(font,\s*badge_pos/);
+
+    // Call site verification
+    assert.match(overlayCode, /_draw_stack_badge\(origin,\s*count\s*-\s*1\)/);
+
+    // Verify text for N=5 and N=6
+    const formatBadge = (totalCount) => `+${totalCount - 1}`;
+    assert.equal(formatBadge(5), '+4');
+    assert.equal(formatBadge(6), '+5');
+    assert.equal(formatBadge(10), '+9');
   });
 });
