@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinh.vn/schemas/behavior/interaction_result.schema.json",
+  "title": "InteractionResult",
+  "description": "Pure evaluated ecological arbitration and resource allocation result for tick N",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "population_id",
+    "simulation_tick",
+    "resource_allocations",
+    "shelter_assignments",
+    "unmet_intents",
+    "total_resource_claims"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0.0"]
+    },
+    "population_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "resource_allocations": {
+      "type": "object",
+      "description": "Map from organism_id to resource allocation map (resource_type -> allocated_quantity)",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "number",
+          "minimum": 0.0
+        }
+      }
+    },
+    "shelter_assignments": {
+      "type": "object",
+      "description": "Map from organism_id to shelter assignment result",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["shelter_acquired", "effective_security_factor"],
+        "properties": {
+          "shelter_acquired": {
+            "type": "boolean"
+          },
+          "effective_security_factor": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "unmet_intents": {
+      "type": "array",
+      "description": "List of intents that could not be satisfied during arbitration",
+      "items": {
+        "type": "object",
+        "required": ["organism_id", "action_type", "reason"],
+        "properties": {
+          "organism_id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
+          "action_type": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": ["RESOURCE_DEPLETED", "SHELTER_FULL", "COMPETITION_LOST", "NO_COMPATIBLE_MATE", "HAZARD_BLOCKED"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "total_resource_claims": {
+      "type": "object",
+      "description": "Sum of all allocated quantities per resource type for atomic commitment to ResourcePool",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0.0
+      }
+    }
+  },
+  "additionalProperties": false
+}

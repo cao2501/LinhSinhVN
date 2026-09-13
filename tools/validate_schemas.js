@@ -39,7 +39,7 @@ for (const schemaPath of schemas) {
     if (!parsed.type) {
       console.warn(`[WARN] ${schemaPath}: Missing type field`);
     }
-    if (parsed.type === 'object' && !parsed.properties && !parsed.additionalProperties) {
+    if (parsed.type === 'object' && !parsed.properties && !parsed.additionalProperties && !parsed.oneOf && !parsed.anyOf && !parsed.allOf) {
       console.warn(`[WARN] ${schemaPath}: Object type without properties`);
     }
 

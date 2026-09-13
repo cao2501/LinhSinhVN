@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinh.vn/schemas/behavior/biological_input_bundle.schema.json",
+  "title": "BiologicalInputBundle",
+  "description": "Pure evaluated input bundle delivered to BiologicalTickCoordinator to prevent double consumption",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "population_id",
+    "simulation_tick",
+    "organism_inputs",
+    "environmental_snapshot"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0.0"]
+    },
+    "population_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "organism_inputs": {
+      "type": "object",
+      "description": "Map from organism_id to per-tick biological input derived strictly from behavior and interaction resolution",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "allocated_food",
+          "shelter_security_factor",
+          "behavior_type",
+          "metabolic_activity_rate"
+        ],
+        "properties": {
+          "allocated_food": {
+            "type": "number",
+            "minimum": 0.0,
+            "description": "Quantity of food resource actually acquired through arbitration"
+          },
+          "shelter_security_factor": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Effective environmental protection factor achieved for this tick"
+          },
+          "behavior_type": {
+            "type": "string",
+            "enum": ["FORAGE", "REST", "SEEK_SHELTER", "SEEK_MATE", "FLEE", "EXPLORE"],
+            "description": "Resolved behavioral activity executed by the organism in this tick"
+          },
+          "metabolic_activity_rate": {
+            "type": "number",
+            "minimum": 0.0,
+            "description": "Energy expenditure coefficient applied to basal metabolic cost"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "environmental_snapshot": {
+      "type": "object",
+      "description": "Read-only snapshot of environmental state at tick N",
+      "required": [
+        "temperature",
+        "humidity",
+        "food_resource",
+        "hazard_rating",
+        "time_of_day",
+        "season"
+      ],
+      "properties": {
+        "temperature": { "type": "number" },
+        "humidity": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "food_resource": { "type": "number", "minimum": 0.0 },
+        "hazard_rating": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "time_of_day": { "type": "string" },
+        "season": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,212 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinh.vn/schemas/behavior/action_intent.schema.json",
+  "title": "ActionIntent",
+  "description": "Pure evaluated action intent request submitted to ecological interaction resolver",
+  "type": "object",
+  "oneOf": [
+    {
+      "title": "ForageActionIntent",
+      "type": "object",
+      "required": [
+        "schema_version",
+        "intent_id",
+        "organism_id",
+        "species_id",
+        "action_type",
+        "urgency_class",
+        "priority_score",
+        "clash_power",
+        "payload"
+      ],
+      "properties": {
+        "schema_version": { "type": "string", "enum": ["1.0.0"] },
+        "intent_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "organism_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "species_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "action_type": { "type": "string", "enum": ["FORAGE"] },
+        "urgency_class": { "type": "string", "enum": ["CRITICAL", "HIGH", "NORMAL", "LOW"] },
+        "priority_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "clash_power": { "type": "number", "minimum": 0.0 },
+        "payload": {
+          "type": "object",
+          "required": ["target_resource_type", "requested_quantity"],
+          "properties": {
+            "target_resource_type": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+            "requested_quantity": { "type": "number", "exclusiveMinimum": 0.0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "ShelterActionIntent",
+      "type": "object",
+      "required": [
+        "schema_version",
+        "intent_id",
+        "organism_id",
+        "species_id",
+        "action_type",
+        "urgency_class",
+        "priority_score",
+        "clash_power",
+        "payload"
+      ],
+      "properties": {
+        "schema_version": { "type": "string", "enum": ["1.0.0"] },
+        "intent_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "organism_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "species_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "action_type": { "type": "string", "enum": ["SEEK_SHELTER"] },
+        "urgency_class": { "type": "string", "enum": ["CRITICAL", "HIGH", "NORMAL", "LOW"] },
+        "priority_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "clash_power": { "type": "number", "minimum": 0.0 },
+        "payload": {
+          "type": "object",
+          "required": ["target_shelter_type", "minimum_security_factor"],
+          "properties": {
+            "target_shelter_type": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+            "minimum_security_factor": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "MateRequestActionIntent",
+      "type": "object",
+      "required": [
+        "schema_version",
+        "intent_id",
+        "organism_id",
+        "species_id",
+        "action_type",
+        "urgency_class",
+        "priority_score",
+        "clash_power",
+        "payload"
+      ],
+      "properties": {
+        "schema_version": { "type": "string", "enum": ["1.0.0"] },
+        "intent_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "organism_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "species_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "action_type": { "type": "string", "enum": ["SEEK_MATE"] },
+        "urgency_class": { "type": "string", "enum": ["CRITICAL", "HIGH", "NORMAL", "LOW"] },
+        "priority_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "clash_power": { "type": "number", "minimum": 0.0 },
+        "payload": {
+          "type": "object",
+          "required": ["target_criteria"],
+          "properties": {
+            "target_criteria": {
+              "type": "object",
+              "required": ["compatible_species_id", "target_sex"],
+              "properties": {
+                "compatible_species_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+                "target_sex": { "type": "string", "enum": ["MALE", "FEMALE"] }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "FleeActionIntent",
+      "type": "object",
+      "required": [
+        "schema_version",
+        "intent_id",
+        "organism_id",
+        "species_id",
+        "action_type",
+        "urgency_class",
+        "priority_score",
+        "clash_power",
+        "payload"
+      ],
+      "properties": {
+        "schema_version": { "type": "string", "enum": ["1.0.0"] },
+        "intent_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "organism_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "species_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "action_type": { "type": "string", "enum": ["FLEE"] },
+        "urgency_class": { "type": "string", "enum": ["CRITICAL", "HIGH", "NORMAL", "LOW"] },
+        "priority_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "clash_power": { "type": "number", "minimum": 0.0 },
+        "payload": {
+          "type": "object",
+          "required": ["threat_source"],
+          "properties": {
+            "threat_source": {
+              "type": "string",
+              "enum": ["ENVIRONMENTAL_HAZARD", "PREDATOR", "OVERCROWDING"]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "RestActionIntent",
+      "type": "object",
+      "required": [
+        "schema_version",
+        "intent_id",
+        "organism_id",
+        "species_id",
+        "action_type",
+        "urgency_class",
+        "priority_score",
+        "clash_power",
+        "payload"
+      ],
+      "properties": {
+        "schema_version": { "type": "string", "enum": ["1.0.0"] },
+        "intent_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "organism_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "species_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "action_type": { "type": "string", "enum": ["REST"] },
+        "urgency_class": { "type": "string", "enum": ["CRITICAL", "HIGH", "NORMAL", "LOW"] },
+        "priority_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "clash_power": { "type": "number", "minimum": 0.0 },
+        "payload": { "type": "null" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "ExploreActionIntent",
+      "type": "object",
+      "required": [
+        "schema_version",
+        "intent_id",
+        "organism_id",
+        "species_id",
+        "action_type",
+        "urgency_class",
+        "priority_score",
+        "clash_power",
+        "payload"
+      ],
+      "properties": {
+        "schema_version": { "type": "string", "enum": ["1.0.0"] },
+        "intent_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "organism_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "species_id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "action_type": { "type": "string", "enum": ["EXPLORE"] },
+        "urgency_class": { "type": "string", "enum": ["CRITICAL", "HIGH", "NORMAL", "LOW"] },
+        "priority_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "clash_power": { "type": "number", "minimum": 0.0 },
+        "payload": { "type": "null" }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

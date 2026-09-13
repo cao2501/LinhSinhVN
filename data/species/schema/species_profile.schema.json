@@ -449,6 +449,11 @@
           "type": "object",
           "additionalProperties": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
         },
+        "behavior_parameters": {
+          "type": "object",
+          "description": "Optional species-specific behavioral tuning parameters defined in Phase 07-B",
+          "additionalProperties": { "type": "number" }
+        },
         "confidence": {
           "type": "string",
           "enum": ["CONFIRMED", "HIGH", "MODERATE", "PROVISIONAL"]
