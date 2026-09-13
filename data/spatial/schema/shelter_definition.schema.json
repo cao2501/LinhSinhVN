@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linhsinhvn.game/spatial/shelter_definition.schema.json",
+  "title": "ShelterDefinition",
+  "description": "Static spatial definition of a shelter structure. Decoupled from biological regeneration.",
+  "type": "object",
+  "required": [
+    "shelter_id",
+    "shelter_type",
+    "position",
+    "capacity",
+    "security_factor"
+  ],
+  "properties": {
+    "shelter_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "description": "Unique canonical identifier of the shelter"
+    },
+    "shelter_type": {
+      "type": "string",
+      "enum": [
+        "TREE_CAVITY",
+        "BURROW_NEST",
+        "ROCK_CREVICE",
+        "UNDER_BARK",
+        "LEAF_FOLD",
+        "CUSTOM"
+      ]
+    },
+    "position": {
+      "$ref": "spatial_coordinate.schema.json"
+    },
+    "capacity": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum number of simultaneous occupants"
+    },
+    "security_factor": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Protection rating against predation / weather extremes [0.0, 1.0]"
+    },
+    "entry_locomotion_requirement": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "CRAWL",
+        "BURROW",
+        "FLIGHT",
+        null
+      ],
+      "description": "Locomotion capability required to enter this shelter"
+    },
+    "micro_climate_offsets": {
+      "type": "object",
+      "properties": {
+        "temperature_delta": {
+          "type": "number"
+        },
+        "humidity_delta": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

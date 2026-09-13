@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linhsinhvn.game/spatial/habitat_resolution_result.schema.json",
+  "title": "HabitatResolutionResult",
+  "description": "Read-only deterministic bundle of ecological spatial context at a coordinate.",
+  "type": "object",
+  "required": [
+    "position",
+    "primary_habitat",
+    "micro_climate",
+    "nearby_shelters",
+    "nearby_resource_zones"
+  ],
+  "properties": {
+    "position": {
+      "$ref": "spatial_coordinate.schema.json"
+    },
+    "primary_habitat": {
+      "$ref": "habitat_definition.schema.json"
+    },
+    "micro_climate": {
+      "$ref": "micro_climate_snapshot.schema.json"
+    },
+    "nearby_shelters": {
+      "type": "array",
+      "items": {
+        "$ref": "shelter_definition.schema.json"
+      },
+      "description": "Deterministic sorted list of shelters available in neighborhood"
+    },
+    "nearby_resource_zones": {
+      "type": "array",
+      "items": {
+        "$ref": "spatial_resource_zone.schema.json"
+      },
+      "description": "Deterministic sorted list of resource zones overlapping neighborhood"
+    }
+  },
+  "additionalProperties": false
+}

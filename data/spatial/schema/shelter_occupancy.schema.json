@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linhsinhvn.game/spatial/shelter_occupancy.schema.json",
+  "title": "ShelterOccupancy",
+  "description": "Authoritative spatial shelter runtime occupancy state. Enforces 0 <= occupancy <= capacity.",
+  "type": "object",
+  "required": [
+    "shelter_id",
+    "capacity",
+    "current_occupancy",
+    "occupant_ids"
+  ],
+  "properties": {
+    "shelter_id": {
+      "type": "string"
+    },
+    "capacity": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "current_occupancy": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "occupant_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Sorted list of organism IDs currently occupying this shelter"
+    }
+  },
+  "additionalProperties": false
+}

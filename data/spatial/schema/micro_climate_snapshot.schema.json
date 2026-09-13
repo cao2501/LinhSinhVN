@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linhsinhvn.game/spatial/micro_climate_snapshot.schema.json",
+  "title": "MicroClimateSnapshot",
+  "description": "Deterministic, derived, read-only local environmental conditions snapshot at a specific coordinate and tick.",
+  "type": "object",
+  "required": [
+    "simulation_tick",
+    "position",
+    "primary_habitat_id",
+    "temperature",
+    "humidity",
+    "effective_security_factor",
+    "is_sheltered"
+  ],
+  "properties": {
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Simulation world clock tick at time of calculation"
+    },
+    "position": {
+      "$ref": "spatial_coordinate.schema.json"
+    },
+    "primary_habitat_id": {
+      "type": "string",
+      "description": "Canonical habitat ID resolved at this coordinate"
+    },
+    "temperature": {
+      "type": "number",
+      "description": "Derived local temperature in Celsius (macro + habitat + shelter delta)"
+    },
+    "humidity": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Derived local relative humidity clamped to [0.0, 1.0]"
+    },
+    "effective_security_factor": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Predation defense / concealment factor [0.0, 1.0]"
+    },
+    "is_sheltered": {
+      "type": "boolean",
+      "description": "Whether the coordinate / organism is currently inside a valid shelter"
+    },
+    "shelter_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "ID of the enclosing shelter if sheltered, otherwise null"
+    }
+  },
+  "additionalProperties": false
+}

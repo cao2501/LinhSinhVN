@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linhsinhvn.game/spatial/spatial_resource_zone.schema.json",
+  "title": "SpatialResourceZone",
+  "description": "Spatial location metadata for where resources exist. DOES NOT OWN RESOURCE QUANTITY (ResourcePool authority).",
+  "type": "object",
+  "required": [
+    "zone_id",
+    "resource_type",
+    "region"
+  ],
+  "properties": {
+    "zone_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "resource_type": {
+      "type": "string",
+      "description": "Canonical resource category identifier (matches ResourcePool resource types)"
+    },
+    "region": {
+      "$ref": "habitat_region.schema.json"
+    },
+    "accessibility_requirements": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Locomotion modes required to harvest/access resources in this zone"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

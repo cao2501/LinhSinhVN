@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linhsinhvn.game/spatial/habitat_region.schema.json",
+  "title": "HabitatRegion",
+  "description": "Spatial geometry bounds for a habitat or environmental zone. Discrete integer coordinates only.",
+  "type": "object",
+  "required": [
+    "type"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "RECTANGLE",
+        "CELL_SET"
+      ]
+    },
+    "bounds": {
+      "type": "object",
+      "description": "Required when type is RECTANGLE (inclusive integer bounds)",
+      "required": [
+        "min_x",
+        "max_x",
+        "min_y",
+        "max_y",
+        "min_z",
+        "max_z"
+      ],
+      "properties": {
+        "min_x": {
+          "type": "integer"
+        },
+        "max_x": {
+          "type": "integer"
+        },
+        "min_y": {
+          "type": "integer"
+        },
+        "max_y": {
+          "type": "integer"
+        },
+        "min_z": {
+          "type": "integer"
+        },
+        "max_z": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "cells": {
+      "type": "array",
+      "description": "Required when type is CELL_SET (canonical sorted array of SpatialCoordinates)",
+      "items": {
+        "$ref": "spatial_coordinate.schema.json"
+      }
+    }
+  },
+  "additionalProperties": false
+}

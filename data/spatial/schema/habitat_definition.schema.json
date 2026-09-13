@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linhsinhvn.game/spatial/habitat_definition.schema.json",
+  "title": "HabitatDefinition",
+  "description": "Deterministic spatial ecological semantic region definition. Decoupled from biological consequences.",
+  "type": "object",
+  "required": [
+    "habitat_id",
+    "habitat_type",
+    "region",
+    "priority",
+    "micro_climate_modifiers"
+  ],
+  "properties": {
+    "habitat_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "description": "Unique canonical identifier for the habitat instance"
+    },
+    "habitat_type": {
+      "type": "string",
+      "enum": [
+        "FOREST_FLOOR",
+        "UNDER_LEAF_LITTER",
+        "ROTTING_WOOD",
+        "TREE_TRUNK",
+        "OPEN_GROUND",
+        "BURROW_INTERIOR",
+        "WATER_MARGIN",
+        "CUSTOM"
+      ],
+      "description": "Ecological semantic category"
+    },
+    "region": {
+      "$ref": "habitat_region.schema.json",
+      "description": "Spatial geometry/region defining bounds of this habitat"
+    },
+    "priority": {
+      "type": "integer",
+      "description": "Deterministic resolution priority when regions overlap (higher integer takes precedence)"
+    },
+    "micro_climate_modifiers": {
+      "type": "object",
+      "required": [
+        "temperature_modifier",
+        "humidity_modifier",
+        "light_level_modifier"
+      ],
+      "properties": {
+        "temperature_modifier": {
+          "type": "number",
+          "description": "Additive temperature delta in Celsius applied to macro EnvironmentState"
+        },
+        "humidity_modifier": {
+          "type": "number",
+          "description": "Additive humidity delta applied to macro EnvironmentState (clamped [0.0, 1.0])"
+        },
+        "light_level_modifier": {
+          "type": "number",
+          "description": "Additive or multiplicative factor for ambient light modifier"
+        },
+        "shelter_security_baseline": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Default security factor of open terrain in this habitat [0.0, 1.0]"
+        }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional arbitrary static descriptive metadata"
+    }
+  },
+  "additionalProperties": false
+}
