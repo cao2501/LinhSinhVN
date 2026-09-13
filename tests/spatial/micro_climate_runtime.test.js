@@ -244,7 +244,7 @@ describe('Micro-climate Runtime (TASK 08-D2)', () => {
   test('MICRO-RUNTIME-10: sequential pipeline Macro -> Habitat -> Shelter is deterministic', () => {
     const registry = createTestRegistry();
     const env = { temperature: 20.0, humidity: 0.4 };
-    const shelter = { is_sheltered: true, shelter_id: 's_0', temperature_delta: 2.0, humidity_delta: 0.1 };
+    const shelter = { is_sheltered: true, shelter_id: 's_0', temperature_delta: 2.0, humidity_delta: 0.1, security_factor: 0.85 };
 
     const res1 = resolveMicroClimate({ coordinate: { x: 15, y: 15, z: 0 }, environmentState: env, habitatRegistry: registry, shelterContext: shelter });
     const res2 = resolveMicroClimate({ coordinate: { x: 15, y: 15, z: 0 }, environmentState: env, habitatRegistry: registry, shelterContext: shelter });
@@ -390,6 +390,129 @@ describe('Micro-climate Runtime (TASK 08-D2)', () => {
       assert.equal(content.includes('Math.random('), false, `Forbidden Math.random in ${f}`);
       assert.equal(content.includes('Date.now('), false, `Forbidden Date.now in ${f}`);
       assert.equal(content.includes('randomUUID('), false, `Forbidden randomUUID in ${f}`);
+    }
+  });
+
+  // --- PATCH 08-D2: Security Contract Hardening ---
+  // MICRO-PATCH-01: verify source of security baseline
+  test('MICRO-PATCH-01: verify source of security baseline strictly from habitat definition', () => {
+    const registry = new HabitatRegistry({ boundary, registerDefault: false });
+    registry.registerHabitat({
+      habitat_id: 'custom_baseline',
+      habitat_type: HabitatCategory.OPEN_GROUND,
+      priority: 1,
+      region: { type: RegionType.RECTANGLE, bounds: { min_x: 0, max_x: 10, min_y: 0, max_y: 10, min_z: 0, max_z: 0 } },
+      micro_climate_modifiers: {
+        temperature_modifier: 0,
+        humidity_modifier: 0,
+        light_level_modifier: 1,
+        shelter_security_baseline: 0.37
+      }
+    });
+
+    const snap = resolveMicroClimate({
+      coordinate: { x: 5, y: 5, z: 0 },
+      environmentState: { temperature: 20, humidity: 0.5 },
+      habitatRegistry: registry
+    });
+
+    assert.equal(snap.effective_security_factor, 0.37);
+  });
+
+  // MICRO-PATCH-02: verify source of shelter security factor
+  test('MICRO-PATCH-02: verify source of shelter security factor strictly from shelter context', () => {
+    const registry = createTestRegistry();
+    const snap = resolveMicroClimate({
+      coordinate: { x: 15, y: 15, z: 0 },
+      environmentState: { temperature: 20, humidity: 0.5 },
+      habitatRegistry: registry,
+      shelterContext: { is_sheltered: true, shelter_id: 's_test', security_factor: 0.93 }
+    });
+
+    assert.equal(snap.effective_security_factor, 0.93);
+  });
+
+  // MICRO-PATCH-03: missing security default does not silently invent value
+  test('MICRO-PATCH-03: missing security_factor in sheltered context throws explicit TypeError (fail-fast)', () => {
+    const registry = createTestRegistry();
+    assert.throws(() => {
+      resolveMicroClimate({
+        coordinate: { x: 15, y: 15, z: 0 },
+        environmentState: { temperature: 20, humidity: 0.5 },
+        habitatRegistry: registry,
+        shelterContext: { is_sheltered: true, shelter_id: 's_test' /* missing security_factor */ }
+      });
+    }, TypeError);
+  });
+
+  // MICRO-PATCH-04: shelterContext is read-only
+  test('MICRO-PATCH-04: shelterContext is never mutated by resolver', () => {
+    const registry = createTestRegistry();
+    const ctx = { is_sheltered: true, shelter_id: 's_ro', security_factor: 0.75, temperature_delta: -2 };
+    const ctxBefore = JSON.stringify(ctx);
+
+    resolveMicroClimate({
+      coordinate: { x: 15, y: 15, z: 0 },
+      environmentState: { temperature: 20, humidity: 0.5 },
+      habitatRegistry: registry,
+      shelterContext: ctx
+    });
+
+    assert.equal(JSON.stringify(ctx), ctxBefore);
+  });
+
+  // MICRO-PATCH-05: no shelter registry created
+  test('MICRO-PATCH-05: resolver does not construct or access a shelter registry', async () => {
+    const fs = await import('node:fs');
+    const resolverSrc = fs.readFileSync('D:/LinhSinhVN/game/spatial/micro_climate/micro_climate_resolver.js', 'utf8');
+    assert.equal(resolverSrc.includes('ShelterRegistry'), false, 'Resolver must not import ShelterRegistry');
+    assert.equal(resolverSrc.includes('new Map'), false, 'Resolver must not maintain internal registry state');
+  });
+
+  // MICRO-PATCH-06: unsheltered path never reads shelter delta
+  test('MICRO-PATCH-06: unsheltered path ignores temperature_delta and humidity_delta in context', () => {
+    const registry = createTestRegistry();
+    const env = { temperature: 28.0, humidity: 0.6 };
+
+    const snap = resolveMicroClimate({
+      coordinate: { x: 15, y: 15, z: 0 },
+      environmentState: env,
+      habitatRegistry: registry,
+      shelterContext: { is_sheltered: false, shelter_id: 's_ignored', temperature_delta: -100, humidity_delta: 100 }
+    });
+
+    // 28 - 3.5 = 24.5 (does not apply -100)
+    assert.equal(snap.temperature, 24.5);
+    // 0.6 + 0.25 = 0.85 (does not apply 100)
+    assert.equal(snap.humidity, 0.85);
+  });
+
+  // MICRO-PATCH-07: sheltered path consumes only provided shelter context
+  test('MICRO-PATCH-07: sheltered path consumes exact provided shelter context without ambient bleed', () => {
+    const registry = createTestRegistry();
+    const snap = resolveMicroClimate({
+      coordinate: { x: 15, y: 15, z: 0 },
+      environmentState: { temperature: 20, humidity: 0.5 },
+      habitatRegistry: registry,
+      shelterContext: { is_sheltered: true, shelter_id: 'box_99', security_factor: 0.99, temperature_delta: 0, humidity_delta: 0 }
+    });
+
+    assert.equal(snap.is_sheltered, true);
+    assert.equal(snap.shelter_id, 'box_99');
+    assert.equal(snap.effective_security_factor, 0.99);
+  });
+
+  // MICRO-PATCH-08: deterministic replay after patch
+  test('MICRO-PATCH-08: 100 replay runs after patch produce bit-for-bit identical snapshots', () => {
+    const registry = createTestRegistry();
+    const env = { temperature: 25.0, humidity: 0.5 };
+    const ctx = { is_sheltered: true, shelter_id: 'shelter_rep', security_factor: 0.85, temperature_delta: -1.5, humidity_delta: 0.1 };
+
+    const first = JSON.stringify(resolveMicroClimate({ coordinate: { x: 15, y: 15, z: 0 }, environmentState: env, habitatRegistry: registry, shelterContext: ctx }));
+
+    for (let i = 0; i < 100; i++) {
+      const snap = JSON.stringify(resolveMicroClimate({ coordinate: { x: 15, y: 15, z: 0 }, environmentState: env, habitatRegistry: registry, shelterContext: ctx }));
+      assert.equal(snap, first);
     }
   });
 });

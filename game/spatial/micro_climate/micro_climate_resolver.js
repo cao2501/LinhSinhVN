@@ -63,7 +63,7 @@ export function resolveMicroClimate({
   );
 
   const shelterId = isSheltered ? shelterContext.shelter_id : null;
-  let effectiveSecurityFactor = 0.1;
+  let effectiveSecurityFactor;
 
   if (isSheltered) {
     if (typeof shelterContext.temperature_delta === 'number' && Number.isFinite(shelterContext.temperature_delta)) {
@@ -72,15 +72,15 @@ export function resolveMicroClimate({
     if (typeof shelterContext.humidity_delta === 'number' && Number.isFinite(shelterContext.humidity_delta)) {
       humidity += shelterContext.humidity_delta;
     }
-    if (typeof shelterContext.security_factor === 'number' && Number.isFinite(shelterContext.security_factor)) {
-      effectiveSecurityFactor = shelterContext.security_factor;
-    } else {
-      effectiveSecurityFactor = 0.8;
+    if (typeof shelterContext.security_factor !== 'number' || !Number.isFinite(shelterContext.security_factor)) {
+      throw new TypeError('shelterContext.security_factor must be a finite number when is_sheltered is true');
     }
+    effectiveSecurityFactor = shelterContext.security_factor;
   } else {
-    if (typeof habitatMods.shelter_security_baseline === 'number' && Number.isFinite(habitatMods.shelter_security_baseline)) {
-      effectiveSecurityFactor = habitatMods.shelter_security_baseline;
+    if (typeof habitatMods.shelter_security_baseline !== 'number' || !Number.isFinite(habitatMods.shelter_security_baseline)) {
+      throw new TypeError(`Habitat "${habitat.habitat_id}" micro_climate_modifiers requires valid shelter_security_baseline`);
     }
+    effectiveSecurityFactor = habitatMods.shelter_security_baseline;
   }
 
   // 4. Stage 3: Field-Specific Clamping & Sanitization
