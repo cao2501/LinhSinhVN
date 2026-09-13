@@ -1,0 +1,22 @@
+[gd_scene load_steps=5 format=3 uid="uid://dm01c02worldview"]
+
+[ext_resource type="Script" path="res://scripts/presentation/world_view.gd" id="1_world_view"]
+[ext_resource type="Script" path="res://scripts/presentation/world_grid_canvas.gd" id="2_grid_canvas"]
+[ext_resource type="Script" path="res://scripts/presentation/static_zones_overlay.gd" id="3_zones_overlay"]
+[ext_resource type="Script" path="res://scripts/ipc/ipc_client.gd" id="4_ipc_client"]
+
+[node name="WorldView" type="Node2D"]
+script = ExtResource("1_world_view")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(400, 400)
+zoom = Vector2(0.8, 0.8)
+
+[node name="WorldGridCanvas" type="Node2D" parent="."]
+script = ExtResource("2_grid_canvas")
+
+[node name="StaticZonesOverlay" type="Node2D" parent="."]
+script = ExtResource("3_zones_overlay")
+
+[node name="IpcClient" type="Node" parent="."]
+script = ExtResource("4_ipc_client")
