@@ -1,16 +1,24 @@
 /**
  * LINHSINHVN — DEMO-01-C / C-04: Live Snapshot Synchronization Test Suite
  * File: tests/demo/demo_c04_snapshot_sync.test.js
- * Base: 3c3b3bf
+ * Base: 3c3b3bf (Patch-01)
  *
- * Covers C04-01 through C04-32 specified by Game Director:
+ * NOTE ON TEST SEMANTICS:
+ * These tests are CONTRACT / SPECIFICATION MODEL TESTS verifying the C-04
+ * live snapshot synchronization architecture and protocol invariants using
+ * high-fidelity JavaScript harnesses and static code analysis.
+ * Because the Godot runtime is unavailable in this environment, actual Godot/GDScript
+ * runtime execution remains UNVERIFIED.
+ *
+ * Covers C04-01 through C04-33:
  * - Connection lifecycle & framing
- * - Snapshot extraction and validation
+ * - Snapshot extraction and strict non-negative integer validation
  * - Monotonic tick advance, duplicate ignore, stale rejection
  * - Explicit reset epoch transition & state cleansing
  * - Play/pause FIFO queue semantics
  * - Negative capability AST scans (zero lerp, tween, physics, bio calculation, RNG)
  * - Deterministic discrete synchronization without wall-clock dependence
+ * - Static proof of GDScript strict integer validation contract
  * - Frozen-domain audits
  */
 
@@ -101,7 +109,8 @@ class TestSnapshotSynchronizerHarness {
     if (!snapshot || typeof snapshot !== 'object') return 'NO_SNAPSHOT';
 
     const tick = snapshot.simulation_tick;
-    if (typeof tick !== 'number' || !Number.isInteger(tick) || tick < 0) {
+    // Strict non-negative integer check: must be type number, Number.isInteger, not float, >= 0
+    if (typeof tick !== 'number' || !Number.isInteger(tick) || tick < 0 || Object.is(tick, -0)) {
       this.warnings.push(`Malformed tick: ${tick}`);
       return 'MALFORMED_TICK';
     }
@@ -385,21 +394,59 @@ describe('DEMO-01-C / C-04: Live Snapshot Synchronization', () => {
     assert.doesNotMatch(codeOnly, /lifecycle_stage\s*=|advance_stage/);
   });
 
-  // --- C04-18: malformed response rejection ---
-  it('C04-18: Malformed response rejection handles invalid envelopes safely', () => {
+  // --- C04-18: malformed response rejection & strict integer simulation_tick regression ---
+  it('C04-18: Malformed response rejection & strict integer simulation_tick regression suite', () => {
     const harness = new TestSnapshotSynchronizerHarness();
-    // Null response
-    assert.equal(harness.handleResponse(null), 'ERROR_DROPPED');
-    // Error response
-    assert.equal(harness.handleResponse({ success: false, error: { code: 'INVALID_REQUEST' } }), 'ERROR_DROPPED');
-    // Missing snapshot
-    assert.equal(harness.handleResponse({ success: true, command: 'step', result: {} }), 'NO_SNAPSHOT');
-    // Non-numeric tick
-    assert.equal(harness.handleResponse({ success: true, command: 'step', result: { snapshot: { simulation_tick: 'NaN' } } }), 'MALFORMED_TICK');
-    // Negative tick
-    assert.equal(harness.handleResponse({ success: true, command: 'step', result: { snapshot: { simulation_tick: -5 } } }), 'MALFORMED_TICK');
 
-    assert.equal(harness.redrawCount, 0);
+    // 1. Initial valid integer 0 accepted
+    const res0 = harness.handleResponse({ success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0, organisms: [{ id: 'org_0' }] } } });
+    assert.equal(res0, 'ACCEPT_AND_APPLY');
+    assert.equal(harness.lastAcceptedTick, 0);
+    assert.equal(harness.sessionEpoch, 0);
+    assert.equal(harness.redrawCount, 1);
+    assert.equal(harness.appliedOrganisms.length, 1);
+
+    // 2. Valid positive integer accepted
+    const resPos = harness.handleResponse({ success: true, command: 'step', result: { snapshot: { simulation_tick: 5, organisms: [{ id: 'org_5' }] } } });
+    assert.equal(resPos, 'ACCEPT_AND_APPLY');
+    assert.equal(harness.lastAcceptedTick, 5);
+    assert.equal(harness.redrawCount, 2);
+
+    // Capture baseline state before malformed inputs
+    const baselineTick = harness.lastAcceptedTick;
+    const baselineEpoch = harness.sessionEpoch;
+    const baselineRedraws = harness.redrawCount;
+    const baselineOrganisms = harness.appliedOrganisms;
+
+    const malformedPayloads = [
+      { desc: 'negative integer -1', tick: -1 },
+      { desc: 'negative integer -5', tick: -5 },
+      { desc: 'fractional float 1.5', tick: 1.5 },
+      { desc: 'fractional float 5.5', tick: 5.5 },
+      { desc: 'fractional float 5.9', tick: 5.9 },
+      { desc: 'string "1"', tick: "1" },
+      { desc: 'null', tick: null },
+      { desc: 'undefined', tick: undefined },
+      { desc: 'NaN', tick: NaN },
+      { desc: 'Infinity', tick: Infinity }
+    ];
+
+    for (const testCase of malformedPayloads) {
+      const payload = { success: true, command: 'step', result: { snapshot: { simulation_tick: testCase.tick, organisms: [{ id: 'bad' }] } } };
+      const res = harness.handleResponse(payload);
+      assert.equal(res, 'MALFORMED_TICK', `Failed to reject ${testCase.desc}`);
+      // Assert zero mutation of presentation state
+      assert.equal(harness.lastAcceptedTick, baselineTick, `Tick mutated on ${testCase.desc}`);
+      assert.equal(harness.sessionEpoch, baselineEpoch, `Epoch mutated on ${testCase.desc}`);
+      assert.equal(harness.redrawCount, baselineRedraws, `Redraw triggered on ${testCase.desc}`);
+      assert.equal(harness.appliedOrganisms, baselineOrganisms, `Organisms mutated on ${testCase.desc}`);
+    }
+
+    // Verify null response & SESSION_ERROR do not advance
+    assert.equal(harness.handleResponse(null), 'ERROR_DROPPED');
+    assert.equal(harness.handleResponse({ success: false, error: { code: 'INVALID_REQUEST' } }), 'ERROR_DROPPED');
+    assert.equal(harness.handleResponse({ success: true, command: 'step', result: {} }), 'NO_SNAPSHOT');
+    assert.equal(harness.redrawCount, baselineRedraws);
   });
 
   // --- C04-19: SESSION_ERROR / bridge failure behavior ---
@@ -610,5 +657,23 @@ describe('DEMO-01-C / C-04: Live Snapshot Synchronization', () => {
   it('C04-32: Deterministic synchronization without wall-clock dependence (no Date.now, performance.now)', () => {
     const raw = fs.readFileSync(SYNCHRONIZER_SCRIPT_PATH, 'utf8');
     assert.doesNotMatch(raw, /Date\.now|performance\.now|Time\.get_ticks|OS\.get_system_time/);
+  });
+  // --- C04-33: static proof of GDScript strict integer validation and reset correlation semantics ---
+  it('C04-33: Static proof of GDScript strict integer validation contract and reset correlation semantics', () => {
+    const raw = fs.readFileSync(SYNCHRONIZER_SCRIPT_PATH, 'utf8');
+
+    // 1. Strict TYPE_INT validation: must check for TYPE_INT
+    assert.match(raw, /typeof\(tick_var\)\s*!=\s*TYPE_INT/);
+
+    // 2. Strict rejection of TYPE_FLOAT: TYPE_FLOAT must NOT be accepted in tick validation
+    assert.doesNotMatch(raw, /typeof\(tick_var\)\s*==\s*TYPE_FLOAT/);
+    assert.doesNotMatch(raw, /typeof\(tick_var\)\s*!=\s*TYPE_FLOAT/);
+
+    // 3. Non-negative tick verification
+    assert.match(raw, /tick\s*<\s*0/);
+
+    // 4. Reset correlation is command-level
+    assert.match(raw, /var\s+is_reset:\s*bool\s*=\s*\(command\s*==\s*"reset"\)/);
+    assert.match(raw, /Reset correlation is command-level correlation/i);
   });
 });

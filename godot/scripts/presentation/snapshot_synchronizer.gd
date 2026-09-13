@@ -1,7 +1,7 @@
 # ==============================================================================
 # LinhSinhVN — DEMO-01-C / C-04: Live Snapshot Synchronizer
 # File: godot/scripts/presentation/snapshot_synchronizer.gd
-# Base: 3c3b3bf
+# Base: 3c3b3bf (Patch-01)
 #
 # PRESENTATION-ONLY SYNCHRONIZATION CONTROLLER.
 # - Connects IpcClient responses to OrganismsOverlay presentation.
@@ -9,7 +9,13 @@
 #     1. tick > last_accepted_tick: ACCEPT_AND_APPLY
 #     2. tick == last_accepted_tick: IGNORE_DUPLICATE (no redraw)
 #     3. tick < last_accepted_tick: REJECT_STALE (warning, no redraw)
-# - Enforces explicit reset correlation (command == "reset" increments epoch).
+# - Enforces strict non-negative integer simulation_tick validation:
+#     Strict TYPE_INT only. TYPE_FLOAT (even integral floats like 1.0 or fractional 5.5),
+#     strings, negative numbers, and nulls are rejected with a warning.
+# - Enforces explicit reset correlation:
+#     Reset correlation is command-level correlation on the ordered authoritative
+#     TCP response stream (command == "reset" increments epoch). Full application-level
+#     request_id correlation is not exposed by frozen C-01 API.
 # - ZERO simulation authority: no autonomous step calls, no delta calculation.
 # - ZERO biological calculation, zero position interpolation, zero RNG.
 # - Preserves last valid presentation snapshot upon bridge failure / disconnect.
@@ -107,18 +113,21 @@ func _on_response_received(response: Dictionary) -> void:
 		return
 	var snapshot: Dictionary = snapshot_var
 
-	# Validate simulation_tick presence and integer type
+	# Strict non-negative integer validation: TYPE_INT only.
+	# Reject TYPE_FLOAT (even integral floats like 1.0 or fractional 5.5) to prevent
+	# silent truncation or contract violation.
 	var tick_var: Variant = snapshot.get("simulation_tick", null)
-	if typeof(tick_var) != TYPE_INT and typeof(tick_var) != TYPE_FLOAT:
-		push_warning("[SnapshotSynchronizer] Malformed snapshot: missing or invalid simulation_tick")
+	if typeof(tick_var) != TYPE_INT:
+		push_warning("[SnapshotSynchronizer] Malformed snapshot: missing or non-integer simulation_tick")
 		return
 
-	var tick: int = int(tick_var)
+	var tick: int = tick_var
 	if tick < 0:
 		push_warning("[SnapshotSynchronizer] Malformed snapshot: negative simulation_tick %d" % tick)
 		return
 
-	# Check explicit reset correlation from authoritative request-response
+	# Reset correlation is command-level correlation on the ordered authoritative TCP
+	# response stream. Full application-level request_id correlation is not exposed by frozen C-01 API.
 	var is_reset: bool = (command == "reset")
 
 	# 5. Tri-state resolution contract
