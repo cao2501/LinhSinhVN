@@ -1,6 +1,6 @@
 /**
  * LinhSinhVN — Individual Behavior Decision Engine Tests (TASK 07-B)
- * 
+ *
  * Verifies pure deterministic behavior evaluation and strict domain contracts:
  * - TC-BEH-01: Deterministic behavior decision
  * - TC-BEH-02: 100-run replay determinism
@@ -592,5 +592,167 @@ describe('Phase 07-B: Individual Behavior Decision Engine Tests', () => {
     assert.equal(res.decision.urgency_class, URGENCY_CLASSES.CRITICAL);
     assert.equal(res.intent.action_type, BEHAVIOR_TYPES.FLEE);
     assert.equal(res.intent.payload.threat_source, 'ENVIRONMENTAL_HAZARD');
+  });
+  it('TC-BEH-19: Species-specific behavior parameter overrides are read from speciesProfile', () => {
+    // Organism with stored_energy = 120 / 200 = 0.60
+    const org = createTestOrganism(profile, 'org_param_override', 'STAGE_ADULT', 'MALE');
+    org.nutrition_state.stored_energy = 120.0;
+    const env = createTestEnv('NIGHT', 0.0);
+
+    // Profile with standard hunger ratio (0.50): at 0.60 energy it does NOT forage
+    const resStandard = evaluateOrganismBehavior({
+      organismState: org,
+      speciesProfile: profile,
+      environmentSnapshot: env,
+      simulationTick: 1,
+      simulationSeed: '0x1234567890abcdef',
+      populationId: 'pop_test'
+    });
+    assert.notEqual(resStandard.decision.behavior_type, BEHAVIOR_TYPES.FORAGE);
+
+    // Profile with custom hunger ratio (0.75): at 0.60 energy it MUST forage
+    const customProfile = JSON.parse(JSON.stringify(profile));
+    customProfile.behavior_profile.behavior_parameters = {
+      hunger_forage_ratio: 0.75
+    };
+
+    const resCustom = evaluateOrganismBehavior({
+      organismState: org,
+      speciesProfile: customProfile,
+      environmentSnapshot: env,
+      simulationTick: 1,
+      simulationSeed: '0x1234567890abcdef',
+      populationId: 'pop_test'
+    });
+
+    assert.equal(resCustom.decision.behavior_type, BEHAVIOR_TYPES.FORAGE);
+    assert.ok(resCustom.decision.reason_codes.includes('HUNGER_DEFICIT'));
+  });
+
+  it('TC-BEH-20: Different species profiles produce different behavior decisions', () => {
+    const org = createTestOrganism(profile, 'org_diff_species', 'STAGE_ADULT', 'MALE');
+    org.nutrition_state.stored_energy = 100.0; // Ratio 0.50
+    const env = createTestEnv('NIGHT', 0.0);
+
+    // Species A: aggressive foraging threshold 0.80
+    const profileA = JSON.parse(JSON.stringify(profile));
+    profileA.species_id = 'species_aggressive_forager';
+    profileA.behavior_profile.behavior_parameters = { hunger_forage_ratio: 0.80 };
+
+    // Species B: conservative foraging threshold 0.30
+    const profileB = JSON.parse(JSON.stringify(profile));
+    profileB.species_id = 'species_conservative_forager';
+    profileB.behavior_profile.behavior_parameters = { hunger_forage_ratio: 0.30 };
+
+    const resA = evaluateOrganismBehavior({
+      organismState: org,
+      speciesProfile: profileA,
+      environmentSnapshot: env,
+      simulationTick: 1,
+      simulationSeed: '0x1234567890abcdef',
+      populationId: 'pop_test'
+    });
+
+    const resB = evaluateOrganismBehavior({
+      organismState: org,
+      speciesProfile: profileB,
+      environmentSnapshot: env,
+      simulationTick: 1,
+      simulationSeed: '0x1234567890abcdef',
+      populationId: 'pop_test'
+    });
+
+    assert.equal(resA.decision.behavior_type, BEHAVIOR_TYPES.FORAGE);
+    assert.notEqual(resB.decision.behavior_type, BEHAVIOR_TYPES.FORAGE);
+  });
+
+  it('TC-BEH-21: Missing optional behavior parameter follows documented fallback policy', () => {
+    const org = createTestOrganism(profile, 'org_fallback', 'STAGE_ADULT', 'MALE');
+    org.nutrition_state.stored_energy = 20.0; // Ratio 20/200 = 0.10 <= 0.15 (starvation_critical_ratio fallback)
+    const env = createTestEnv('NIGHT', 0.0);
+
+    const profileNoParams = JSON.parse(JSON.stringify(profile));
+    delete profileNoParams.behavior_profile.behavior_parameters;
+
+    const res = evaluateOrganismBehavior({
+      organismState: org,
+      speciesProfile: profileNoParams,
+      environmentSnapshot: env,
+      simulationTick: 1,
+      simulationSeed: '0x1234567890abcdef',
+      populationId: 'pop_test'
+    });
+
+    assert.ok(res);
+    assert.equal(res.decision.urgency_class, URGENCY_CLASSES.CRITICAL);
+    assert.equal(res.decision.behavior_type, BEHAVIOR_TYPES.FORAGE);
+    assert.ok(res.decision.reason_codes.includes('CRITICAL_STARVATION'));
+  });
+
+  it('TC-BEH-22: FORAGE requested_quantity is an intent request strictly from nutrition profile', () => {
+    const org = createTestOrganism(profile, 'org_forage_req', 'STAGE_ADULT', 'MALE');
+    org.nutrition_state.stored_energy = 50.0;
+    const env = createTestEnv('NIGHT', 0.0);
+
+    // Profile specifies base_intake_capacity_per_tick in nutrition_profile
+    const expectedIntake = profile.nutrition_profile.base_intake_capacity_per_tick;
+    assert.ok(typeof expectedIntake === 'number' && expectedIntake > 0);
+
+    const res = evaluateOrganismBehavior({
+      organismState: org,
+      speciesProfile: profile,
+      environmentSnapshot: env,
+      simulationTick: 1,
+      simulationSeed: '0x1234567890abcdef',
+      populationId: 'pop_test'
+    });
+
+    assert.equal(res.intent.action_type, BEHAVIOR_TYPES.FORAGE);
+    assert.equal(res.intent.payload.requested_quantity, expectedIntake);
+
+    // Invariant: NutritionState.stored_energy is NOT mutated by generating this intent
+    assert.equal(org.nutrition_state.stored_energy, 50.0);
+  });
+
+  it('TC-BEH-23: Behavior Engine does not perform population-level resource arbitration', () => {
+    const org1 = createTestOrganism(profile, 'org_arb_1', 'STAGE_ADULT', 'MALE', 10.0);
+    const org2 = createTestOrganism(profile, 'org_arb_2', 'STAGE_ADULT', 'MALE', 30.0);
+    org1.nutrition_state.stored_energy = 50.0;
+    org2.nutrition_state.stored_energy = 50.0;
+
+    const env = createTestEnv('NIGHT', 0.0);
+
+    const result = evaluatePopulationBehavior({
+      organisms: [org1, org2],
+      speciesProfiles: { xylotrupes_rhinoceros_proto: profile },
+      environmentSnapshot: env,
+      simulationTick: 1,
+      simulationSeed: '0x1234567890abcdef',
+      populationId: 'pop_test'
+    });
+
+    // 07-B only produces individual intents, does NOT produce resource_allocations map
+    assert.ok(!('resource_allocations' in result.evaluation_result));
+    assert.ok(!('total_resource_claims' in result.evaluation_result));
+    assert.equal(result.intents.length, 2);
+    assert.equal(result.intents[0].action_type, BEHAVIOR_TYPES.FORAGE);
+    assert.equal(result.intents[1].action_type, BEHAVIOR_TYPES.FORAGE);
+  });
+
+  it('TC-BEH-24: clash_power is a packaged fact for 07-C arbitration, not an allocation solver here', () => {
+    const org = createTestOrganism(profile, 'org_fact', 'STAGE_ADULT', 'MALE', 42.5);
+    const env = createTestEnv('NIGHT', 0.0);
+
+    const res = evaluateOrganismBehavior({
+      organismState: org,
+      speciesProfile: profile,
+      environmentSnapshot: env,
+      simulationTick: 1,
+      simulationSeed: '0x1234567890abcdef',
+      populationId: 'pop_test'
+    });
+
+    // clash_power is simply read from derivedStats and passed through to ActionIntent
+    assert.equal(res.intent.clash_power, 42.5);
   });
 });

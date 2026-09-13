@@ -1,18 +1,23 @@
 /**
  * LinhSinhVN — Individual Behavior Decision Engine (TASK 07-B)
- * 
+ *
  * Pure, deterministic, data-driven evaluator mapping:
  * (OrganismState + SpeciesProfile + EnvironmentSnapshot) -> BehaviorDecision -> ActionIntent
- * 
+ *
  * Hard Invariants:
  * - Zero mutation on any authoritative state.
  * - Dead organisms produce NO decisions and NO intents.
  * - Stage mobility/capability restrictions strictly enforced.
  * - Survival Urgency (CRITICAL > HIGH > NORMAL > LOW) dominates priority_score.
- * - Data-driven behavior parameters from SpeciesProfile.
+ * - Data-driven behavior parameters loaded strictly from SpeciesProfile (with documented prototype fallbacks).
  * - Circadian rhythm aligns with species activity period & environment time_of_day.
  * - Nullable decision_seed (null for deterministic branches; domain-separated 64-bit hex for stochastic branches).
- * - Zero nondeterminism.
+ * - Zero nondeterminism (Zero unseeded random APIs).
+ *
+ * Boundary Separations:
+ * - INDIVIDUAL SCOPE: Evaluates what a single organism intends to do.
+ * - NO POPULATION ARBITRATION: Does NOT resolve multi-organism resource contention or allocate resources (owned by 07-C).
+ * - NO NUTRITION POLICY DUPLICATION: FORAGE requested_quantity is read strictly from speciesProfile.nutrition_profile.base_intake_capacity_per_tick.
  */
 
 import {
@@ -21,7 +26,7 @@ import {
   URGENCY_WEIGHTS,
   TARGET_DOMAINS,
   THREAT_SOURCES,
-  DEFAULT_BEHAVIOR_PARAMETERS
+  PROTOTYPE_FALLBACK_BEHAVIOR_PARAMETERS
 } from './constants.js';
 
 import { deriveBehaviorSeed } from './seed_derivation.js';
@@ -33,7 +38,7 @@ function clamp(value, min = 0.0, max = 1.0) {
 
 /**
  * Resolves circadian active state for an organism based on species profile and environmental time of day.
- * 
+ *
  * @param {string} primaryActivityPeriod - 'NOCTURNAL' | 'DIURNAL' | 'CREPUSCULAR' | 'CATHEMERAL'
  * @param {string} timeOfDay - 'DAWN' | 'DAY' | 'DUSK' | 'NIGHT'
  * @returns {boolean} True if organism is in its active physiological period
@@ -54,7 +59,7 @@ export function isCircadianActivePeriod(primaryActivityPeriod, timeOfDay) {
 
 /**
  * Pure evaluation of an individual organism's behavioral decision for a single tick.
- * 
+ *
  * @param {object} params
  * @param {object} params.organismState - Read-only OrganismState
  * @param {object} params.speciesProfile - Read-only SpeciesProfile
@@ -116,21 +121,20 @@ export function evaluateOrganismBehavior({
     return { decision, intent };
   }
 
-  // 3. Resolve data-driven behavior parameters
+  // 3. Resolve data-driven behavior parameters: SpeciesProfile overrides take precedence over prototype defaults
   const bpConfig = speciesProfile.behavior_profile?.behavior_parameters || {};
   const paramsConfig = {
-    starvation_critical_ratio: bpConfig.starvation_critical_ratio ?? DEFAULT_BEHAVIOR_PARAMETERS.starvation_critical_ratio,
-    hunger_forage_ratio: bpConfig.hunger_forage_ratio ?? DEFAULT_BEHAVIOR_PARAMETERS.hunger_forage_ratio,
-    critical_hazard_threshold: bpConfig.critical_hazard_threshold ?? DEFAULT_BEHAVIOR_PARAMETERS.critical_hazard_threshold,
-    high_hazard_threshold: bpConfig.high_hazard_threshold ?? DEFAULT_BEHAVIOR_PARAMETERS.high_hazard_threshold,
-    critical_stress_threshold: bpConfig.critical_stress_threshold ?? DEFAULT_BEHAVIOR_PARAMETERS.critical_stress_threshold,
-    high_stress_threshold: bpConfig.high_stress_threshold ?? DEFAULT_BEHAVIOR_PARAMETERS.high_stress_threshold,
-    mating_energy_ratio: bpConfig.mating_energy_ratio ?? DEFAULT_BEHAVIOR_PARAMETERS.mating_energy_ratio,
-    circadian_rest_bias: bpConfig.circadian_rest_bias ?? DEFAULT_BEHAVIOR_PARAMETERS.circadian_rest_bias,
-    forage_intake_capacity: bpConfig.forage_intake_capacity ?? DEFAULT_BEHAVIOR_PARAMETERS.forage_intake_capacity
+    starvation_critical_ratio: bpConfig.starvation_critical_ratio ?? PROTOTYPE_FALLBACK_BEHAVIOR_PARAMETERS.starvation_critical_ratio,
+    hunger_forage_ratio: bpConfig.hunger_forage_ratio ?? PROTOTYPE_FALLBACK_BEHAVIOR_PARAMETERS.hunger_forage_ratio,
+    critical_hazard_threshold: bpConfig.critical_hazard_threshold ?? PROTOTYPE_FALLBACK_BEHAVIOR_PARAMETERS.critical_hazard_threshold,
+    high_hazard_threshold: bpConfig.high_hazard_threshold ?? PROTOTYPE_FALLBACK_BEHAVIOR_PARAMETERS.high_hazard_threshold,
+    critical_stress_threshold: bpConfig.critical_stress_threshold ?? PROTOTYPE_FALLBACK_BEHAVIOR_PARAMETERS.critical_stress_threshold,
+    high_stress_threshold: bpConfig.high_stress_threshold ?? PROTOTYPE_FALLBACK_BEHAVIOR_PARAMETERS.high_stress_threshold,
+    mating_energy_ratio: bpConfig.mating_energy_ratio ?? PROTOTYPE_FALLBACK_BEHAVIOR_PARAMETERS.mating_energy_ratio,
+    circadian_rest_bias: bpConfig.circadian_rest_bias ?? PROTOTYPE_FALLBACK_BEHAVIOR_PARAMETERS.circadian_rest_bias
   };
 
-  // 4. Biological & Environmental facts
+  // 4. Biological & Environmental facts (read-only, not recalculated)
   const storedEnergy = organismState.nutrition_state?.stored_energy ?? 100.0;
   const maxCapacity = organismState.nutrition_state?.max_energy_capacity ?? 200.0;
   const energyRatio = maxCapacity > 0 ? (storedEnergy / maxCapacity) : 0.0;
@@ -147,7 +151,7 @@ export function evaluateOrganismBehavior({
   const primaryPeriod = speciesProfile.behavior_profile?.primary_activity_period ?? 'CATHEMERAL';
   const isCircadianActive = isCircadianActivePeriod(primaryPeriod, timeOfDay);
 
-  // 5. Evaluate behavior candidates
+  // 5. Evaluate behavior candidates for this individual organism
   const candidates = [];
 
   // A. Candidate: FLEE
@@ -241,7 +245,7 @@ export function evaluateOrganismBehavior({
 
   // E. Candidate: REST
   if (!isCircadianActive) {
-    // Circadian alignment: passive hours significantly favor REST
+    // Circadian alignment: passive hours favor REST
     const restScore = clamp(0.70 + paramsConfig.circadian_rest_bias * 0.20);
     candidates.push({
       behavior_type: BEHAVIOR_TYPES.REST,
@@ -272,7 +276,7 @@ export function evaluateOrganismBehavior({
     });
   }
 
-  // 6. Select optimal decision based on strict hierarchical arbitration
+  // 6. Select optimal decision for THIS organism based on strict hierarchical urgency
   // Survival Urgency dominates priority_score: CRITICAL > HIGH > NORMAL > LOW
   candidates.sort((a, b) => {
     const weightDiff = URGENCY_WEIGHTS[b.urgency_class] - URGENCY_WEIGHTS[a.urgency_class];
@@ -281,7 +285,7 @@ export function evaluateOrganismBehavior({
     const scoreDiff = b.priority_score - a.priority_score;
     if (Math.abs(scoreDiff) > 1e-9) return scoreDiff;
 
-    // Biological tie-breaker fallback order
+    // Biological safety fallback order for internal candidate tie
     const fallbackOrder = {
       FLEE: 6,
       FORAGE: 5,
@@ -324,7 +328,14 @@ export function evaluateOrganismBehavior({
 
 /**
  * Creates a valid discriminated ActionIntent conforming to action_intent.schema.json from a decision.
- * 
+ *
+ * IMPORTANT SEMANTIC CONTRACT:
+ * ActionIntent is strictly an execution request / intention.
+ * requested_quantity is the quantity the organism ASKS to acquire.
+ * It does NOT mutate ResourcePool, and it does NOT represent actual consumed nutrients.
+ * Resource allocation is arbitrated in Phase 07-C (InteractionResolver),
+ * and biological assimilation occurs in BiologicalTickCoordinator.
+ *
  * @param {object} decision - Validated BehaviorDecision object
  * @param {object} organismState - Read-only OrganismState
  * @param {object} speciesProfile - Read-only SpeciesProfile
@@ -354,7 +365,15 @@ export function createActionIntentFromDecision(decision, organismState, speciesP
     case BEHAVIOR_TYPES.FORAGE: {
       const consumableList = speciesProfile.nutrition_profile?.consumable_resources || [];
       const targetResource = consumableList[0] || 'FOOD';
-      const intakeCapacity = speciesProfile.nutrition_profile?.base_intake_capacity_per_tick || 1.0;
+
+      // Strictly owned by nutrition_profile.base_intake_capacity_per_tick.
+      // Behavior Engine does NOT define or duplicate intake capacity.
+      const intakeCapacity = speciesProfile.nutrition_profile?.base_intake_capacity_per_tick;
+      if (typeof intakeCapacity !== 'number' || intakeCapacity <= 0) {
+        throw new Error(
+          `Invalid or missing base_intake_capacity_per_tick in speciesProfile.nutrition_profile for species '${speciesId}'`
+        );
+      }
 
       return {
         ...baseIntent,
@@ -429,8 +448,12 @@ export function createActionIntentFromDecision(decision, organismState, speciesP
 
 /**
  * Pure evaluation of behavior across an entire population of organisms for tick N.
- * Canonical organism ordering (organism_id ASC) guarantees insertion-order invariance.
- * 
+ *
+ * SCOPE CLARIFICATION:
+ * This function evaluates INDIVIDUAL decisions for each organism in canonical order (organism_id ASC).
+ * It does NOT perform population resource competition, contest arbitration, or allocation.
+ * Arbitration between conflicting intents is strictly owned by Phase 07-C (InteractionResolver).
+ *
  * @param {object} params
  * @param {Array<object>} params.organisms - List of OrganismState objects
  * @param {Map<string, object>|object} params.speciesProfiles - Species profile map or dictionary

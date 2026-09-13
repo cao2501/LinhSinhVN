@@ -36,7 +36,7 @@ He thong bien quan the sinh vat tu cac doi tuong thu dong thanh cac thuc the tu 
   Neu quyet dinh hanh vi khong kich hoat nhanh ngau nhien nao thi `decision_seed = null`.
   Neu co stochastic tie-break hoac random exploration:
   $$\text{decision\_seed} = \text{Hash64}(\text{SimulationSeed} \mid \text{PopulationId} \mid \text{SimulationTick} \mid \text{OrganismId} \mid \text{"BEHAVIOR"})$$
-  Tuyet doi cam: `Math.random()`, `Date.now()`, `crypto.randomUUID()`.
+  Tuyet doi cam: unseeded random / date / time APIs.
 
 - **INV-07-06 (Zero Duplicate State in OrganismState)**:
   Khong luu tru truong hanh vi thuong truc trong `OrganismState`. Moi tinh toan hanh vi la phan ung tuc thoi theo tick. `BiologicalInputBundle` chi chua du lieu delta cua tick, khong chua cac truong sinh hoc da co trong `OrganismState`.
@@ -50,98 +50,48 @@ He thong bien quan the sinh vat tu cac doi tuong thu dong thanh cac thuc the tu 
 
 ---
 
-## 3. World Tick Integration Pipeline
+## 3. Parameter Classification & Ownership Architecture
 
-Quy trinh 9 buoc trong `SimulationWorld.advancePopulationTick`:
+Moi thong so trong he thong hanh vi duoc phan loai ro rang vao 4 nhom de ngan ngua nhat quan cac gia tri hardcode:
 
-```
-WORLD TICK N
-   │
-   ├─► Step 1: Environment(t) Snapshot (Bat bien)
-   │
-   ├─► Step 2: Behavior Evaluation (PURE) [TASK 07-B]
-   │     ├─ Input: OrganismState(t) + Environment(t) + SpeciesProfile
-   │     └─ Output: BehaviorEvaluationResult & ActionIntent[]
-   │
-   ├─► Step 3: Interaction Resolution (PURE) [TASK 07-C]
-   │     ├─ Input: ActionIntent[] + ResourcePoolSnapshot(t) + Environment(t)
-   │     └─ Output: InteractionResult
-   │
-   ├─► Step 4: Assemble BiologicalInputBundle (PURE) [TASK 07-C]
-   │     ├─ Ghep noi InteractionResult + BehaviorDecisions + Environment(t)
-   │     └─ Output: BiologicalInputBundle
-   │
-   ├─► Step 5: Biological Tick Evaluation (PURE) [TASK 06-B-03]
-   │     ├─ Input: OrganismState(t) + BiologicalInputBundle
-   │     └─ Output: Candidate OrganismState(t+1)
-   │
-   ├─► Step 6: Reproduction Planning (PURE) [TASK 06-C]
-   │     ├─ Input: Candidate OrganismState(t+1)
-   │     └─ Output: BreedingPlan
-   │
-   ├─► Step 7: Ecology Feedback Candidate (PURE) [TASK 06-B-03]
-   │     ├─ Input: InteractionResult claims + Sinh khoi bai tiet
-   │     └─ Output: Candidate Environment(t+1)
-   │
-   ├─► Step 8: Full Preflight Validation
-   │     └─ Kiem tra toan ven candidate states & invariants; ABORT neu loi
-   │
-   └─► Step 9: SINGLE ATOMIC COMMIT
-         ├─ PopulationRegistry: Commit cap nhat candidate states & them offspring
-         ├─ ResourcePool: Tru tai nguyen theo InteractionResult.total_resource_claims
-         ├─ EnvironmentState: Commit candidate Environment(t+1)
-         └─ SimulationClock: N -> N+1
-```
+| Ten Thong So | Nhom Phan Loai | Quyen So Huu (Ownership) | Y Nghia / Fallback Policy |
+|---|---|---|---|
+| `BEHAVIOR_TYPES` | A. Universal Engine Invariant | Engine Core (`constants.js`) | Enum cac loai hanh vi hop le (`FORAGE`, `REST`, `SEEK_SHELTER`, `SEEK_MATE`, `FLEE`, `EXPLORE`). |
+| `URGENCY_CLASSES` | A. Universal Engine Invariant | Engine Core (`constants.js`) | Enum 4 cap do khan cap sinh ton (`CRITICAL`, `HIGH`, `NORMAL`, `LOW`). |
+| `URGENCY_WEIGHTS` | A. Universal Engine Invariant | Engine Core (`constants.js`) | Trong so phan cap uu tien bat bien (`CRITICAL: 4` > `HIGH: 3` > `NORMAL: 2` > `LOW: 1`). |
+| `TARGET_DOMAINS` | A. Universal Engine Invariant | Engine Core (`constants.js`) | Enum mien muc tieu hanh vi (`RESOURCE`, `SHELTER`, `MATE`, `SAFETY`, `REST`, `NONE`). |
+| `THREAT_SOURCES` | A. Universal Engine Invariant | Engine Core (`constants.js`) | Enum nguon de doa cho hanh vi chay tron (`ENVIRONMENTAL_HAZARD`, `PREDATOR`, `OVERCROWDING`). |
+| `starvation_critical_ratio` | C. Species-Specific (Fallback B) | `SpeciesProfile.behavior_profile.behavior_parameters` | Nguong ti le nang luong kich hoat doi nguy cap (`CRITICAL`). Fallback prototype: `0.15`. |
+| `hunger_forage_ratio` | C. Species-Specific (Fallback B) | `SpeciesProfile.behavior_profile.behavior_parameters` | Nguong ti le nang luong bat dau uu tien kiem an. Fallback prototype: `0.50`. |
+| `critical_hazard_threshold` | C. Species-Specific (Fallback B) | `SpeciesProfile.behavior_profile.behavior_parameters` | Nguong nguy co moi truong kich hoat tron chay (`CRITICAL`). Fallback prototype: `0.80`. |
+| `high_hazard_threshold` | C. Species-Specific (Fallback B) | `SpeciesProfile.behavior_profile.behavior_parameters` | Nguong nguy co moi truong can tim noi tru an (`HIGH`). Fallback prototype: `0.50`. |
+| `critical_stress_threshold` | C. Species-Specific (Fallback B) | `SpeciesProfile.behavior_profile.behavior_parameters` | Nguong stress qua tai can tru an khan cap (`CRITICAL`). Fallback prototype: `0.85`. |
+| `high_stress_threshold` | C. Species-Specific (Fallback B) | `SpeciesProfile.behavior_profile.behavior_parameters` | Nguong stress cao. Fallback prototype: `0.60`. |
+| `mating_energy_ratio` | C. Species-Specific (Fallback B) | `SpeciesProfile.behavior_profile.behavior_parameters` | Ti le nang luong toi thieu de giao phoi. Fallback prototype: `0.70`. |
+| `circadian_rest_bias` | C. Species-Specific (Fallback B) | `SpeciesProfile.behavior_profile.behavior_parameters` | He so tang uu tien nghi ngoi ngoai gio sinh hoc. Fallback prototype: `0.40`. |
+| `forage_intake_capacity` | D. Not a Behavior Parameter | `SpeciesProfile.nutrition_profile.base_intake_capacity_per_tick` | **DA BI LOAI BO HOAN TOAN KHOI BEHAVIOR ENGINE**. Luong thuc an yeu cau doc truc tiep tu `nutrition_profile`. |
 
 ---
 
-## 4. Individual Behavior Decision Algorithm (Phase 07-B)
+## 4. Semantics & Boundaries
 
-### 4.1 Decision Hierarchy & Urgency Classes
-Hanh vi duoc danh gia qua 4 cap do khan cap sinh ton (`urgency_class`):
-- `CRITICAL` (Trong so 4): Nguy hiem chet nguoi truc tiep (doi kiet que, moi truong cuc ky doc hai / thien tai, stress qua tai suy kiet sinh luc). Luon thang the moi hanh vi o cac cap duoi.
-- `HIGH` (Trong so 3): Thieu hut nang luong ro ret (doi), moi truong co nguy co dang ke, stress cao.
-- `NORMAL` (Trong so 2): Hoat dong binh thuong (sinh san khi du nang luong, nghi ngoi theo nhip sinh hoc ngay/dem).
-- `LOW` (Trong so 1): Kham pha moi truong khi no du, nghi ngoi duong suc co ban, giai doan bat dong.
+### 4.1 Quyen So Huu Yeu Cau Thuc An (`requested_quantity`)
+- `ActionIntent` cua hanh vi `FORAGE` mang theo truong `requested_quantity`.
+- **Y nghia hop dong**: Day la **y dinh / de nghi xin cap phat** cua ca the, phan anh nhu cau tieu thu dinh ky dua tren `nutrition_profile.base_intake_capacity_per_tick`.
+- **Ranh gioi nghiem ngat**:
+  * Behavior Engine KHONG tru tai nguyen trong `ResourcePool`.
+  * Behavior Engine KHONG thay doi nang luong trong `NutritionState`.
+  * Interaction Engine (Phase 07-C) se phan bo luong thuc an thuc te (`allocated_quantity`) dua tren tai nguyen kha dung.
+  * Biological Tick (Phase 06-B-03) moi thuc su dong hoa luong thuc an nay vao sinh khoi va nang luong cua sinh vat.
 
-Trong cung cap `urgency_class`, quyet dinh duoc phan dinh theo `priority_score` giam dan ($[0.0, 1.0]$).
-
-### 4.2 Behavior Parameters & Defaults
-Moi loai co the tuy bien tham so hanh vi qua `SpeciesProfile.behavior_profile.behavior_parameters`. Neu khong co, he thong su dung cac gia tri mac dinh khoa hoc:
-- `starvation_critical_ratio` (0.15): Ti le nang luong du tru / dung luong toi da gay nguy co chet doi (`CRITICAL` FORAGE).
-- `hunger_forage_ratio` (0.50): Ti le nang luong bat dau kich hoat uu tien tim kiem thuc an.
-- `critical_hazard_threshold` (0.80): Chi so nguy hiem moi truong kich hoat chay tron khan cap (`CRITICAL` FLEE).
-- `high_hazard_threshold` (0.50): Chi so nguy hiem moi truong kich hoat tim noi tru an (`HIGH` SEEK_SHELTER).
-- `critical_stress_threshold` (0.85): Muc do stress kich hoat tru an cap cuu (`CRITICAL` SEEK_SHELTER).
-- `high_stress_threshold` (0.60): Muc do stress nang cao.
-- `mating_energy_ratio` (0.70): Ti le nang luong toi thieu de ca the xem xet sinh san.
-- `circadian_rest_bias` (0.40): He so tang cuong nghi ngoi trong khung gio thu dong sinh hoc.
-- `forage_intake_capacity` (1.0): Luong thuc an co so yeu cau moi lan kiem an.
-
-### 4.3 Circadian Alignment
-- Loai `NOCTURNAL`: Khung gio hoat dong la `NIGHT` va `DUSK`. Trong gio `DAY` va `DAWN`, thien huong nghi ngoi (`REST`) duoc day len muc `NORMAL` uu tien cao.
-- Loai `DIURNAL`: Khung gio hoat dong la `DAY` va `DAWN`. Gio `NIGHT` va `DUSK` uu tien `REST`.
-- Loai `CREPUSCULAR`: Hoat dong tich cuc luc `DAWN` va `DUSK`.
-- Loai `CATHEMERAL`: Hoat dong deu dan ca ngay lan dem.
-
-### 4.4 Stage & Motility Restrictions
-- Ca the o giai doan bat dong (`is_motile_stage === false`, vi du `STAGE_EGG`, `STAGE_PUPA`) chi co the phat sinh hanh vi `REST` (`urgency: LOW`, `priority: 0.1`).
-- Ca the khong o giai doan an (`is_feeding_stage === false`) khong the phat sinh `FORAGE`.
-- Ca the khong o giai doan sinh san (`is_reproductive_stage === false`) khong the phat sinh `SEEK_MATE`.
-- Ca the da chet (`is_alive === false` hoac `status === 'DEAD'`) tra ve `null` (khong co quyet dinh hay intent nao).
-
-### 4.5 Fact Ownership vs Recalculation
-- `clash_power`: Doc truc tiep tu `organismState.genetics.derived_stats.clash_power`.
-- `nutrition`: Doc tu `organismState.nutrition_state`.
-- `stress`: Doc tu `organismState.stress_state`.
-- `development`: Doc tu `organismState.current_stage_id`.
-Engine hanh vi tuyet doi khong tinh toan lai cac chi so sinh hoc tren.
-
-### 4.6 Seed Derivation & Nullability
-- Truong hop thuan tat dinh: `decision_seed = null`.
-- Truong hop stochastic tie-break / exploration:
-  $$\text{decision\_seed} = \text{Hash64}(\text{SimulationSeed} \mid \text{PopulationId} \mid \text{SimulationTick} \mid \text{OrganismId} \mid \text{"BEHAVIOR"})$$
-  Chuoi hex 16 ky tu dap ung regex `^[0-9a-fA-F]{16}$`.
+### 4.2 Ranh Gioi Phan Dinh Tuong Tac (Arbitration Boundary)
+- **Phase 07-B la INDIVIDUAL Behavior Decision Engine**:
+  * Chi danh gia va lua chon 1 hanh vi toi uu cho **tung ca the rieng le**.
+  * `candidates.sort` ben trong `evaluateOrganismBehavior` chi nham muc dich chon ra y dinh hanh dong tot nhat cho ban than sinh vat do dua tren cap do khan cap sinh ton (`urgency_class`) va diem uu tien (`priority_score`).
+  * `clash_power` duoc dong goi vao `ActionIntent` duoi dang mot **su kien di truyen (genetic fact)** da tinh toan san tu `derivedStats`.
+- **Phase 07-C la ECOLOGICAL Interaction Resolver**:
+  * Day moi la noi dien ra cuoc canh tranh tai nguyen giua **nhieu ca the voi nhau** (population-level contest).
+  * Thuat toan arbitration `urgency_class` -> `priority_score` -> `clash_power` -> `organism_id` duoc thuc thi tai 07-C de phan chia thuc an va noi tru an. 07-B tuyet doi khong giai quyet tranh chap quan the.
 
 ---
 
@@ -195,6 +145,6 @@ Cau truc Discriminated Union theo `action_type`:
 
 ## 6. Phan Dinh Scope & Lo Trinh
 - **Phase 07-A (CLOSED - Commit 552bb03)**: Specifications, Schemas, Domain Contracts, Tests Schema Validation.
-- **Phase 07-B (COMPLETED)**: Individual Behavior Decision Engine (Pure evaluation mapping, Seed derivation, Urgency classification, Circadian alignment, Stage restrictions).
+- **Phase 07-B (COMPLETED - Commit fafaa4e + corrective patch)**: Individual Behavior Decision Engine (Pure evaluation mapping, Seed derivation, Urgency classification, Circadian alignment, Stage restrictions, Parameter classification).
 - **Phase 07-C (LOCKED - Pending Audit)**: Interaction Resolver & Biological Input Bundle Factory (Deterministic arbitration, Conservation law).
 - **Phase 07-D (LOCKED)**: SimulationWorld Integration (Ghep noi vao pipeline 9 buoc cua World Tick, kiem chung toan dien qua integration tests).
