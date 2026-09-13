@@ -134,7 +134,7 @@ func _on_reset_pressed() -> void:
 	_dispatch_command("reset")
 
 func _on_sync_pressed() -> void:
-	if _command_in_flight or (_current_bridge_state != "CONNECTED" and _current_bridge_state != "BRIDGE_FAILED"):
+	if _command_in_flight or _current_bridge_state != "CONNECTED":
 		return
 	_dispatch_command("getSnapshot")
 
@@ -168,8 +168,6 @@ func _on_ipc_connected() -> void:
 	_current_bridge_state = "CONNECTED"
 	_command_in_flight = false
 	_refresh_ui_state()
-	# Authoritative resynchronization upon connection establishment
-	_dispatch_command("getSnapshot")
 
 func _on_ipc_disconnected() -> void:
 	_current_bridge_state = "DISCONNECTED"
@@ -268,4 +266,4 @@ func _refresh_ui_state() -> void:
 			if pause_button != null: pause_button.disabled = true
 			if step_button != null: step_button.disabled = true
 			if reset_button != null: reset_button.disabled = false # Recovery command
-			if sync_button != null: sync_button.disabled = false
+			if sync_button != null: sync_button.disabled = true
