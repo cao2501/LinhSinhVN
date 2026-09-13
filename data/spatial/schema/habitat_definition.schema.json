@@ -14,7 +14,7 @@
   "properties": {
     "habitat_id": {
       "type": "string",
-      "pattern": "^[a-z0-9_]+$",
+      "pattern": "^[A-Za-z0-9_]+$",
       "description": "Unique canonical identifier for the habitat instance"
     },
     "habitat_type": {

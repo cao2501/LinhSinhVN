@@ -80,9 +80,9 @@ A Habitat is a spatial ecological semantic region defined via `HabitatDefinition
 It is an explicit canonical `HabitatDefinition` data object registered in `HabitatRegistry` with:
 ```json
 {
-  "habitat_id": "default_open_terrain",
+  "habitat_id": "DEFAULT_OPEN_TERRAIN",
   "habitat_type": "OPEN_GROUND",
-  "region": { "type": "RECTANGLE", "bounds": { "min_x": -2147483648, "max_x": 2147483647, "min_y": -2147483648, "max_y": 2147483647, "min_z": -2147483648, "max_z": 2147483647 } },
+  "region": { "type": "RECTANGLE", "bounds": { "min_x": 0, "max_x": 100, "min_y": 0, "max_y": 100, "min_z": -1, "max_z": 2 } },
   "priority": -1,
   "micro_climate_modifiers": {
     "temperature_modifier": 0.0,

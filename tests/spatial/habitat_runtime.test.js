@@ -183,7 +183,7 @@ describe('Habitat + Region Runtime (TASK 08-D1)', () => {
 
   // HAB-RUNTIME-09: DEFAULT_OPEN_TERRAIN explicit registration
   test('HAB-RUNTIME-09: DEFAULT_OPEN_TERRAIN is an explicitly registered HabitatDefinition data entry', () => {
-    const registry = new HabitatRegistry();
+    const registry = new HabitatRegistry({ boundary: { min_x: 0, max_x: 200, min_y: 0, max_y: 200, min_z: -5, max_z: 5 } });
     assert.equal(registry.hasHabitat(DEFAULT_OPEN_TERRAIN_ID), true);
     const def = registry.getHabitat(DEFAULT_OPEN_TERRAIN_ID);
     assert.equal(def.habitat_type, HabitatCategory.OPEN_GROUND);
@@ -193,7 +193,7 @@ describe('Habitat + Region Runtime (TASK 08-D1)', () => {
 
   // HAB-RUNTIME-10: DEFAULT_OPEN_TERRAIN fallback resolution
   test('HAB-RUNTIME-10: unassigned coordinates resolve to registered DEFAULT_OPEN_TERRAIN', () => {
-    const registry = new HabitatRegistry();
+    const registry = new HabitatRegistry({ boundary: { min_x: 0, max_x: 200, min_y: 0, max_y: 200, min_z: -5, max_z: 5 } });
     // Register a specific small habitat
     registry.registerHabitat({
       habitat_id: 'oasis',
@@ -245,7 +245,7 @@ describe('Habitat + Region Runtime (TASK 08-D1)', () => {
 
   // HAB-RUNTIME-12: resolution purity
   test('HAB-RUNTIME-12: resolveHabitatAt causes zero mutations to registry or coordinates', () => {
-    const registry = new HabitatRegistry();
+    const registry = new HabitatRegistry({ boundary: { min_x: 0, max_x: 200, min_y: 0, max_y: 200, min_z: -5, max_z: 5 } });
     const coord = { x: 3, y: 4, z: 0 };
     const coordBefore = JSON.stringify(coord);
     const regSnapshotBefore = JSON.stringify(registry.serialize());
@@ -259,7 +259,7 @@ describe('Habitat + Region Runtime (TASK 08-D1)', () => {
 
   // HAB-RUNTIME-13: defensive snapshot ownership
   test('HAB-RUNTIME-13: serialize and deserialize round-trip losslessly without internal reference leakage', () => {
-    const registry = new HabitatRegistry();
+    const registry = new HabitatRegistry({ boundary: { min_x: 0, max_x: 200, min_y: 0, max_y: 200, min_z: -5, max_z: 5 } });
     registry.registerHabitat({
       habitat_id: 'burrow_nest',
       habitat_type: HabitatCategory.BURROW_INTERIOR,
@@ -279,7 +279,7 @@ describe('Habitat + Region Runtime (TASK 08-D1)', () => {
 
   // HAB-RUNTIME-14: world boundary behavior
   test('HAB-RUNTIME-14: non-integer and out-of-bounds coordinates throw deterministic errors', () => {
-    const registry = new HabitatRegistry();
+    const registry = new HabitatRegistry({ boundary: { min_x: 0, max_x: 200, min_y: 0, max_y: 200, min_z: -5, max_z: 5 } });
     assert.throws(() => resolveHabitatAt({ x: 1.5, y: 2, z: 0 }, registry), TypeError);
     assert.throws(() => resolveHabitatAt({ x: NaN, y: 2, z: 0 }, registry), TypeError);
     assert.throws(() => resolveHabitatAt({ x: '2', y: 2, z: 0 }, registry), TypeError);
@@ -289,7 +289,7 @@ describe('Habitat + Region Runtime (TASK 08-D1)', () => {
   test('HAB-RUNTIME-15: 100 independent replay runs produce identical resolution', () => {
     const results = [];
     for (let i = 0; i < 100; i++) {
-      const reg = new HabitatRegistry();
+      const reg = new HabitatRegistry({ boundary: { min_x: 0, max_x: 200, min_y: 0, max_y: 200, min_z: -5, max_z: 5 } });
       reg.registerHabitat({
         habitat_id: 'leaf_litter',
         habitat_type: HabitatCategory.UNDER_LEAF_LITTER,
@@ -320,7 +320,7 @@ describe('Habitat + Region Runtime (TASK 08-D1)', () => {
     const pool = new ResourcePool(500);
     const poolBefore = pool.quantity;
 
-    const registry = new HabitatRegistry();
+    const registry = new HabitatRegistry({ boundary: { min_x: 0, max_x: 200, min_y: 0, max_y: 200, min_z: -5, max_z: 5 } });
     resolveHabitatAt({ x: 0, y: 0, z: 0 }, registry);
 
     assert.equal(pool.quantity, poolBefore);

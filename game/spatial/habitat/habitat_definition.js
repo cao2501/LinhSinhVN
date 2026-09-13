@@ -16,7 +16,7 @@ export const HabitatCategory = Object.freeze({
   CUSTOM: 'CUSTOM'
 });
 
-export const DEFAULT_OPEN_TERRAIN_ID = 'default_open_terrain';
+export const DEFAULT_OPEN_TERRAIN_ID = 'DEFAULT_OPEN_TERRAIN';
 
 export class HabitatDefinition {
   /**
@@ -37,7 +37,7 @@ export class HabitatDefinition {
       throw new TypeError('HabitatDefinition config must be an object');
     }
 
-    if (typeof config.habitat_id !== 'string' || !/^[a-z0-9_]+$/.test(config.habitat_id)) {
+    if (typeof config.habitat_id !== 'string' || !/^[A-Za-z0-9_]+$/.test(config.habitat_id)) {
       throw new TypeError(`Invalid habitat_id: "${config.habitat_id}". Must be non-empty alphanumeric lowercase string with underscores.`);
     }
 
@@ -96,22 +96,17 @@ export class HabitatDefinition {
    * @param {Object} [boundary] - Optional world boundary to bound the default terrain.
    * @returns {HabitatDefinition}
    */
-  static createDefaultOpenTerrain(boundary = null) {
-    const bounds = boundary ? {
-      min_x: boundary.min_x,
-      max_x: boundary.max_x,
-      min_y: boundary.min_y,
-      max_y: boundary.max_y,
-      min_z: boundary.min_z,
-      max_z: boundary.max_z
-    } : {
-      min_x: -2147483648,
-      max_x: 2147483647,
-      min_y: -2147483648,
-      max_y: 2147483647,
-      min_z: -2147483648,
-      max_z: 2147483647
-    };
+  static createDefaultOpenTerrain(boundary) {
+    if (!boundary || typeof boundary !== 'object') {
+      throw new TypeError('createDefaultOpenTerrain requires an explicit world boundary object');
+    }
+    const { min_x, max_x, min_y, max_y, min_z, max_z } = boundary;
+    for (const v of [min_x, max_x, min_y, max_y, min_z, max_z]) {
+      if (typeof v !== 'number' || !Number.isInteger(v)) {
+        throw new TypeError(`world boundary coordinate must be a discrete integer, received: ${v}`);
+      }
+    }
+    const bounds = { min_x, max_x, min_y, max_y, min_z, max_z };
 
     return new HabitatDefinition({
       habitat_id: DEFAULT_OPEN_TERRAIN_ID,

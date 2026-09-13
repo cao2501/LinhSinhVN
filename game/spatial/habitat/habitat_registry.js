@@ -16,6 +16,9 @@ export class HabitatRegistry {
 
     const registerDefault = options.registerDefault !== false;
     if (registerDefault) {
+      if (!options.boundary) {
+        throw new TypeError('HabitatRegistry with default open terrain requires explicit boundary in options');
+      }
       const defaultTerrain = HabitatDefinition.createDefaultOpenTerrain(options.boundary);
       this._habitats.set(defaultTerrain.habitat_id, defaultTerrain);
     }
@@ -82,6 +85,9 @@ export class HabitatRegistry {
   reset(keepDefault = true, boundary = null) {
     this._habitats.clear();
     if (keepDefault) {
+      if (!boundary) {
+        throw new TypeError('HabitatRegistry reset with default open terrain requires explicit boundary');
+      }
       const defaultTerrain = HabitatDefinition.createDefaultOpenTerrain(boundary);
       this._habitats.set(defaultTerrain.habitat_id, defaultTerrain);
     }
