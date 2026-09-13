@@ -21,6 +21,8 @@
 class_name PresentationControls
 extends Control
 
+signal sync_requested()
+
 const Config = preload("res://scripts/presentation/demo_world_config.gd")
 
 @export var ipc_client_path: NodePath = NodePath("../../IpcClient")
@@ -136,6 +138,7 @@ func _on_reset_pressed() -> void:
 func _on_sync_pressed() -> void:
 	if _command_in_flight or _current_bridge_state != "CONNECTED":
 		return
+	sync_requested.emit()
 	_dispatch_command("getSnapshot")
 
 func _on_z_up_pressed() -> void:

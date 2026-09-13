@@ -34,12 +34,14 @@ const POLL_INTERVAL: float = 0.1 # 100ms (10 Hz) live presentation sampling
 
 @export var ipc_client_path: NodePath = NodePath("IpcClient")
 @export var snapshot_synchronizer_path: NodePath = NodePath("SnapshotSynchronizer")
+@export var presentation_controls_path: NodePath = NodePath("UI/PresentationControls")
 
 @onready var camera: Camera2D = $Camera2D
 @onready var grid_canvas: WorldGridCanvas = $WorldGridCanvas
 @onready var zones_overlay: StaticZonesOverlay = $StaticZonesOverlay
 @onready var ipc_client: IpcClient = get_node_or_null(ipc_client_path) as IpcClient
 @onready var snapshot_synchronizer: SnapshotSynchronizer = get_node_or_null(snapshot_synchronizer_path) as SnapshotSynchronizer
+@onready var presentation_controls: Control = get_node_or_null(presentation_controls_path) as Control
 
 # Presentation State
 var active_z_layer: int = 0
@@ -57,6 +59,11 @@ var _poll_accumulator: float = 0.0
 var _current_playback_status: String = "PAUSED"
 var _bridge_failed_active: bool = false
 
+# Hardened Polling Response Correlation State (C-08-C Hardening)
+var _initial_snapshot_pending: bool = false
+var _manual_sync_pending_count: int = 0
+var _pending_snapshot_sources: Array[String] = [] # FIFO correlation: "INITIAL", "MANUAL", "POLL"
+
 func _ready() -> void:
 	# Centered at (400, 400)
 	setup_camera()
@@ -68,6 +75,7 @@ func _ready() -> void:
 	# C-08 Integration Orchestration
 	_setup_ipc_client()
 	_setup_snapshot_synchronizer()
+	_setup_presentation_controls()
 	set_process(true)
 
 func _setup_ipc_client() -> void:
@@ -111,12 +119,15 @@ func _process(delta: float) -> void:
 	# Concern 2: C-08-C Live Playback Presentation Polling (Option A)
 	# Operates ONLY when playback status is PLAYING, transport is CONNECTED,
 	# and no bridge failure is active.
+	# HARDENING: Must NOT dispatch poll when a non-poll getSnapshot is pending.
 	if _current_playback_status == "PLAYING" and ipc_client != null and not _bridge_failed_active:
 		if ipc_client.get_connection_state() == IpcClient.ConnectionState.CONNECTED:
 			_poll_accumulator += delta
-			if _poll_accumulator >= POLL_INTERVAL and not _snapshot_poll_in_flight:
+			var non_poll_pending: bool = _initial_snapshot_pending or (_manual_sync_pending_count > 0)
+			if _poll_accumulator >= POLL_INTERVAL and not _snapshot_poll_in_flight and not non_poll_pending:
 				_poll_accumulator = 0.0
 				_snapshot_poll_in_flight = true
+				_pending_snapshot_sources.append("POLL")
 				ipc_client.get_snapshot()
 		else:
 			_poll_accumulator = 0.0
@@ -127,10 +138,15 @@ func _on_ipc_connected() -> void:
 	_reconnect_accumulator = 0.0
 	_connection_generation += 1
 	_bridge_failed_active = false
+	_pending_snapshot_sources.clear()
+	_manual_sync_pending_count = 0
+	_snapshot_poll_in_flight = false
 	
 	# Exactly-once initial getSnapshot per connection generation (C-08-A, not counted as C-08-C poll)
 	if _initial_snapshot_requested_gen != _connection_generation:
 		_initial_snapshot_requested_gen = _connection_generation
+		_initial_snapshot_pending = true
+		_pending_snapshot_sources.append("INITIAL")
 		if ipc_client != null:
 			ipc_client.get_snapshot()
 
@@ -139,6 +155,9 @@ func _on_ipc_disconnected() -> void:
 	_reconnect_accumulator = 0.0
 	_poll_accumulator = 0.0
 	_snapshot_poll_in_flight = false
+	_initial_snapshot_pending = false
+	_manual_sync_pending_count = 0
+	_pending_snapshot_sources.clear()
 
 func _on_ipc_bridge_failed(_error_message: String) -> void:
 	# Invariant: bridge_failed is a session error, NOT a transport disconnect.
@@ -146,18 +165,42 @@ func _on_ipc_bridge_failed(_error_message: String) -> void:
 	_bridge_failed_active = true
 	_poll_accumulator = 0.0
 	_snapshot_poll_in_flight = false
+	_initial_snapshot_pending = false
+	_manual_sync_pending_count = 0
+	_pending_snapshot_sources.clear()
 
 func _on_ipc_response_received(response: Dictionary) -> void:
 	var command: String = String(response.get("command", ""))
 	
-	# C08-C09: Only getSnapshot responses release the polling in-flight lock
 	if command == "getSnapshot":
-		_snapshot_poll_in_flight = false
+		if not _pending_snapshot_sources.is_empty():
+			var source: String = _pending_snapshot_sources.pop_front()
+			if source == "INITIAL":
+				_initial_snapshot_pending = false
+			elif source == "MANUAL":
+				if _manual_sync_pending_count > 0:
+					_manual_sync_pending_count -= 1
+			elif source == "POLL":
+				_snapshot_poll_in_flight = false
+		else:
+			# Uncorrelated or late response with empty tracking queue:
+			# Do not clear _snapshot_poll_in_flight if polling wasn't the source
+			pass
 	elif command == "reset":
 		_poll_accumulator = 0.0
 		_snapshot_poll_in_flight = false
+		_initial_snapshot_pending = false
+		_manual_sync_pending_count = 0
+		_pending_snapshot_sources.clear()
 		if bool(response.get("success", false)):
 			_bridge_failed_active = false
+
+func _on_manual_sync_requested() -> void:
+	_manual_sync_pending_count += 1
+	_pending_snapshot_sources.append("MANUAL")
+
+func notify_manual_sync_requested() -> void:
+	_on_manual_sync_requested()
 
 func _on_playback_status_changed(status: String) -> void:
 	_current_playback_status = status
@@ -191,6 +234,15 @@ func get_current_playback_status() -> String:
 
 func is_bridge_failed_active() -> bool:
 	return _bridge_failed_active
+
+func is_initial_snapshot_pending() -> bool:
+	return _initial_snapshot_pending
+
+func get_manual_sync_pending_count() -> int:
+	return _manual_sync_pending_count
+
+func get_pending_snapshot_sources() -> Array[String]:
+	return _pending_snapshot_sources.duplicate()
 
 # --- Viewport & Camera Setup ---
 

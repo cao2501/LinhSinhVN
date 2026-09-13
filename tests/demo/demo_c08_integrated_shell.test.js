@@ -1306,6 +1306,406 @@ describe('DEMO-01-C / C-08-C: Live Playback Presentation Polling', () => {
 
     const allowed = [
       'godot/scripts/presentation/world_view.gd',
+      'godot/scripts/presentation/presentation_controls.gd',
+      'tests/demo/demo_c08_integrated_shell.test.js'
+    ];
+
+    for (const f of modifiedFiles) {
+      assert.ok(allowed.includes(f), `Forbidden file modified: ${f}`);
+    }
+  });
+});
+
+describe('DEMO-01-C / C-08-C-H: Hardening Polling Response Correlation', () => {
+  const worldViewPath = path.resolve(process.cwd(), 'godot/scripts/presentation/world_view.gd');
+  const presentationControlsPath = path.resolve(process.cwd(), 'godot/scripts/presentation/presentation_controls.gd');
+  const worldViewContent = fs.readFileSync(worldViewPath, 'utf8');
+  const presentationControlsContent = fs.readFileSync(presentationControlsPath, 'utf8');
+
+  // Hardened WorldView Model with FIFO source tracking & non-poll gating
+  class WorldViewHardenedPollingModel extends WorldViewModel {
+    constructor(ipcClient) {
+      super(ipcClient);
+      this.POLL_INTERVAL = 0.1;
+      this.snapshotPollInFlight = false;
+      this.pollAccumulator = 0.0;
+      this.currentPlaybackStatus = 'PAUSED';
+      this.bridgeFailedActive = false;
+
+      // C-08-C Hardening state
+      this.initialSnapshotPending = false;
+      this.manualSyncPendingCount = 0;
+      this.pendingSnapshotSources = []; // FIFO: 'INITIAL', 'MANUAL', 'POLL'
+
+      if (this.ipcClient) {
+        this.ipcClient.on('response_received', (res) => this.onIpcResponseReceived(res));
+      }
+    }
+
+    onPlaybackStatusChanged(status) {
+      this.currentPlaybackStatus = status;
+      if (this.currentPlaybackStatus !== 'PLAYING') {
+        this.pollAccumulator = 0.0;
+      }
+    }
+
+    onIpcConnected() {
+      super.onIpcConnected();
+      this.bridgeFailedActive = false;
+      this.pendingSnapshotSources = [];
+      this.manualSyncPendingCount = 0;
+      this.snapshotPollInFlight = false;
+
+      if (this.initialSnapshotRequestedGen === this.connectionGeneration) {
+        this.initialSnapshotPending = true;
+        this.pendingSnapshotSources.push('INITIAL');
+      }
+    }
+
+    onIpcDisconnected() {
+      super.onIpcDisconnected();
+      this.pollAccumulator = 0.0;
+      this.snapshotPollInFlight = false;
+      this.initialSnapshotPending = false;
+      this.manualSyncPendingCount = 0;
+      this.pendingSnapshotSources = [];
+    }
+
+    onIpcBridgeFailed(_msg) {
+      super.onIpcBridgeFailed(_msg);
+      this.bridgeFailedActive = true;
+      this.pollAccumulator = 0.0;
+      this.snapshotPollInFlight = false;
+      this.initialSnapshotPending = false;
+      this.manualSyncPendingCount = 0;
+      this.pendingSnapshotSources = [];
+    }
+
+    notifyManualSyncRequested() {
+      this.manualSyncPendingCount += 1;
+      this.pendingSnapshotSources.push('MANUAL');
+    }
+
+    onIpcResponseReceived(res) {
+      const command = String(res.command || '');
+      if (command === 'getSnapshot') {
+        if (this.pendingSnapshotSources.length > 0) {
+          const source = this.pendingSnapshotSources.shift();
+          if (source === 'INITIAL') {
+            this.initialSnapshotPending = false;
+          } else if (source === 'MANUAL') {
+            if (this.manualSyncPendingCount > 0) {
+              this.manualSyncPendingCount -= 1;
+            }
+          } else if (source === 'POLL') {
+            this.snapshotPollInFlight = false;
+          }
+        }
+      } else if (command === 'reset') {
+        this.pollAccumulator = 0.0;
+        this.snapshotPollInFlight = false;
+        this.initialSnapshotPending = false;
+        this.manualSyncPendingCount = 0;
+        this.pendingSnapshotSources = [];
+        if (Boolean(res.success)) {
+          this.bridgeFailedActive = false;
+        }
+      }
+    }
+
+    process(delta) {
+      super.process(delta);
+
+      if (this.currentPlaybackStatus === 'PLAYING' && this.ipcClient && !this.bridgeFailedActive) {
+        if (this.ipcClient.get_connection_state() === 'CONNECTED') {
+          this.pollAccumulator += delta;
+          const nonPollPending = this.initialSnapshotPending || (this.manualSyncPendingCount > 0);
+          if (this.pollAccumulator >= this.POLL_INTERVAL && !this.snapshotPollInFlight && !nonPollPending) {
+            this.pollAccumulator = 0.0;
+            this.snapshotPollInFlight = true;
+            this.pendingSnapshotSources.push('POLL');
+            this.ipcClient.get_snapshot();
+          }
+        } else {
+          this.pollAccumulator = 0.0;
+        }
+      } else {
+        this.pollAccumulator = 0.0;
+      }
+    }
+  }
+
+  test('C08-C-H01: Initial getSnapshot pending prevents C-08-C polling from dispatching', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected(); // initial snapshot queued & dispatched
+
+    assert.equal(wv.initialSnapshotPending, true);
+    assert.equal(ipc.sentCommands.length, 1);
+
+    wv.onPlaybackStatusChanged('PLAYING');
+    wv.process(0.15); // accumulator reaches 100ms
+
+    assert.equal(ipc.sentCommands.length, 1, 'Must NOT dispatch polling while initial snapshot is pending');
+    assert.equal(wv.snapshotPollInFlight, false);
+  });
+
+  test('C08-C-H02: Initial getSnapshot response completes initial-sync state', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+
+    assert.equal(wv.initialSnapshotPending, true);
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } });
+
+    assert.equal(wv.initialSnapshotPending, false, 'Initial getSnapshot response must complete initial sync state');
+    assert.equal(wv.snapshotPollInFlight, false);
+  });
+
+  test('C08-C-H03: Polling becomes eligible only after initial synchronization is complete', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    // While pending:
+    wv.process(0.2);
+    assert.equal(ipc.sentCommands.length, 1);
+
+    // Complete initial sync:
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } });
+
+    // Now eligible:
+    wv.process(0.15);
+    assert.equal(ipc.sentCommands.length, 2, 'Polling dispatches once initial sync is complete');
+    assert.equal(wv.snapshotPollInFlight, true);
+  });
+
+  test('C08-C-H04: A non-poll initial getSnapshot response cannot clear an active polling lock', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+
+    // Simulate race condition scenario where both INITIAL and POLL are queued
+    wv.snapshotPollInFlight = true;
+    wv.pendingSnapshotSources.push('POLL');
+
+    // Initial response arrives:
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } });
+
+    // Initial response must resolve INITIAL, leaving POLL lock untouched!
+    assert.equal(wv.initialSnapshotPending, false);
+    assert.equal(wv.snapshotPollInFlight, true, 'Initial getSnapshot response must NOT clear active polling lock');
+  });
+
+  test('C08-C-H05: Manual SYNC pending cannot cause _snapshot_poll_in_flight to clear prematurely', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } }); // initial resolved
+
+    // Manual sync dispatched
+    wv.notifyManualSyncRequested();
+    assert.equal(wv.manualSyncPendingCount, 1);
+
+    // Simulate poll in-flight race
+    wv.snapshotPollInFlight = true;
+    wv.pendingSnapshotSources.push('POLL');
+
+    // Manual SYNC response arrives first:
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 5 } } });
+
+    assert.equal(wv.manualSyncPendingCount, 0);
+    assert.equal(wv.snapshotPollInFlight, true, 'Manual SYNC response must NOT clear polling lock prematurely');
+  });
+
+  test('C08-C-H06: Manual SYNC and polling cannot result in two outstanding C-08-C polling requests', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    // Manual SYNC is pending
+    wv.notifyManualSyncRequested();
+    assert.equal(wv.manualSyncPendingCount, 1);
+
+    wv.process(0.5); // long delta
+    assert.equal(ipc.sentCommands.length, 1, 'Polling must not dispatch while manual SYNC is pending');
+    assert.equal(wv.snapshotPollInFlight, false);
+  });
+
+  test('C08-C-H07: Two consecutive polling intervals cannot create two outstanding polling requests', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15); // poll 1 dispatches
+    assert.equal(ipc.sentCommands.length, 2);
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    wv.process(0.5); // interval passes again without response
+    assert.equal(ipc.sentCommands.length, 2, 'Cannot dispatch second poll while first is in-flight');
+  });
+
+  test('C08-C-H08: Late initial getSnapshot response after polling eligibility cannot create another polling request', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    const sentBefore = ipc.sentCommands.length;
+    // Late initial response arrives
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+
+    assert.equal(ipc.sentCommands.length, sentBefore, 'Response arrival must not create a polling request');
+  });
+
+  test('C08-C-H09: Late manual SYNC response cannot release an unrelated polling lock', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+
+    // Manual SYNC dispatched then poll dispatched
+    wv.notifyManualSyncRequested();
+    wv.snapshotPollInFlight = true;
+    wv.pendingSnapshotSources.push('POLL');
+
+    // Manual sync response arrives
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    assert.equal(wv.snapshotPollInFlight, true, 'Late manual SYNC response cannot release polling lock');
+
+    // Then polling response arrives
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    assert.equal(wv.snapshotPollInFlight, false, 'Polling response releases polling lock');
+  });
+
+  test('C08-C-H10: Late polling response correctly releases the polling lock', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15); // poll dispatches
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    // Late response arrives:
+    ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 10 } } });
+    assert.equal(wv.snapshotPollInFlight, false);
+  });
+
+  test('C08-C-H11: PAUSE during polling prevents new polling', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15); // poll 1 dispatches
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' }); // poll 1 resolves
+
+    wv.onPlaybackStatusChanged('PAUSED');
+    wv.process(0.5);
+    assert.equal(ipc.sentCommands.length, 2, 'No new polls while PAUSED');
+    assert.equal(wv.pollAccumulator, 0.0);
+  });
+
+  test('C08-C-H12: RESET during polling prevents new polling', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15); // poll 1 in flight
+    assert.equal(wv.snapshotPollInFlight, true);
+
+    ipc.emit('response_received', { success: true, command: 'reset' });
+    assert.equal(wv.snapshotPollInFlight, false);
+    assert.equal(wv.pendingSnapshotSources.length, 0);
+    assert.equal(wv.pollAccumulator, 0.0);
+  });
+
+  test('C08-C-H13: DISCONNECTED during polling prevents new polling', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15); // poll 1 in flight
+    ipc.simulateDisconnected();
+
+    assert.equal(wv.snapshotPollInFlight, false);
+    assert.equal(wv.pendingSnapshotSources.length, 0);
+    assert.equal(wv.pollAccumulator, 0.0);
+
+    wv.process(0.5);
+    assert.equal(ipc.sentCommands.length, 2, 'No polls during DISCONNECTED');
+  });
+
+  test('C08-C-H14: BRIDGE_FAILED during polling prevents new polling', () => {
+    const ipc = new MockIpcClient();
+    const wv = new WorldViewHardenedPollingModel(ipc);
+    wv.ready();
+    ipc.simulateConnected();
+    ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    wv.onPlaybackStatusChanged('PLAYING');
+
+    wv.process(0.15); // poll 1 in flight
+    ipc.emit('bridge_failed', 'Sim error');
+
+    assert.equal(wv.bridgeFailedActive, true);
+    assert.equal(wv.snapshotPollInFlight, false);
+    assert.equal(wv.pendingSnapshotSources.length, 0);
+
+    wv.process(0.5);
+    assert.equal(ipc.sentCommands.length, 2, 'No polls during BRIDGE_FAILED');
+  });
+
+  test('C08-C-H15: No IPC protocol changes', () => {
+    const diff = execSync('git diff 4d808f3 godot/scripts/ipc/ipc_client.gd', { encoding: 'utf8' }).trim();
+    assert.equal(diff, '', 'ipc_client.gd must have zero changes');
+  });
+
+  test('C08-C-H16: No SnapshotSynchronizer changes', () => {
+    const diff = execSync('git diff 4d808f3 godot/scripts/presentation/snapshot_synchronizer.gd', { encoding: 'utf8' }).trim();
+    assert.equal(diff, '', 'snapshot_synchronizer.gd must have zero changes');
+  });
+
+  test('C08-C-H17: No simulation authority added to WorldView', () => {
+    assert.ok(!worldViewContent.includes('ipc_client.step()'), 'WorldView must not call step()');
+    assert.ok(!worldViewContent.includes('ipc_client.play()'), 'WorldView must not call play()');
+    assert.ok(!worldViewContent.includes('ipc_client.pause()'), 'WorldView must not call pause()');
+    assert.ok(!worldViewContent.includes('ipc_client.reset()'), 'WorldView must not call reset()');
+    assert.ok(!worldViewContent.includes('simulation_tick ='), 'WorldView must not mutate simulation_tick');
+  });
+
+  test('C08-C-H18: No frozen-domain files modified', () => {
+    const diff = execSync('git diff --name-only 4d808f3', { encoding: 'utf8' }).trim();
+    const modifiedFiles = diff ? diff.split('\n').map(s => s.trim()) : [];
+
+    const allowed = [
+      'godot/scripts/presentation/world_view.gd',
+      'godot/scripts/presentation/presentation_controls.gd',
       'tests/demo/demo_c08_integrated_shell.test.js'
     ];
 
