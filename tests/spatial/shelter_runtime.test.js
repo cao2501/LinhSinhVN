@@ -746,4 +746,186 @@ describe('Shelter Runtime (TASK 08-D3)', () => {
       assert.equal(content.includes('randomUUID('), false, `Forbidden randomUUID in ${f}`);
     }
   });
+
+  // --- PATCH 08-D3: Determinism & Derived-State Hardening ---
+  // SHELTER-PATCH-01: canonical occupant ordering is locale-independent
+  test('SHELTER-PATCH-01: canonical occupant ordering is strictly code-point lexical and locale-independent', () => {
+    const occ = new ShelterOccupancy({ shelter_id: 'lex_test', capacity: 10 });
+    // Strings with non-trivial ASCII / symbols
+    const ids = ['ant_z', 'ant_a', 'ant_10', 'ant_2', 'ant_b'];
+    for (const id of ids) {
+      occ.addOccupant(id);
+    }
+    // Lexical sort: 'ant_10' < 'ant_2' < 'ant_a' < 'ant_b' < 'ant_z'
+    const expected = ['ant_10', 'ant_2', 'ant_a', 'ant_b', 'ant_z'];
+    assert.deepEqual(occ.occupant_ids, expected);
+  });
+
+  // SHELTER-PATCH-02: same occupancy inserted in different orders produces identical canonical serialization
+  test('SHELTER-PATCH-02: same occupancy inserted in different orders produces identical canonical serialization', () => {
+    function build(order) {
+      const reg = new ShelterRegistry({ boundary });
+      reg.registerShelter({
+        shelter_id: 'shelter_ord',
+        shelter_type: ShelterType.TREE_CAVITY,
+        position: { x: 5, y: 5, z: 0 },
+        capacity: 5,
+        security_factor: 0.8
+      });
+      const sw = createMockSpatialWorld();
+      for (const id of order) {
+        sw.register({ entity_id: id, position: { x: 5, y: 5, z: 0 } });
+        reg.enterShelter({ spatialWorld: sw, organismId: id, shelterId: 'shelter_ord' });
+      }
+      return JSON.stringify(reg.serialize());
+    }
+
+    const snap1 = build(['org_c', 'org_a', 'org_b']);
+    const snap2 = build(['org_b', 'org_c', 'org_a']);
+    const snap3 = build(['org_a', 'org_b', 'org_c']);
+
+    assert.equal(snap1, snap2);
+    assert.equal(snap2, snap3);
+  });
+
+  // SHELTER-PATCH-03: different runtime locale/environment cannot alter canonical ordering
+  test('SHELTER-PATCH-03: code-point ordering does not depend on localeCompare or Intl', async () => {
+    const fs = await import('node:fs');
+    const occSrc = fs.readFileSync('D:/LinhSinhVN/game/spatial/shelter/shelter_occupancy.js', 'utf8');
+    const regSrc = fs.readFileSync('D:/LinhSinhVN/game/spatial/shelter/shelter_registry.js', 'utf8');
+    assert.equal(occSrc.includes('localeCompare'), false, 'shelter_occupancy.js must not contain localeCompare');
+    assert.equal(regSrc.includes('localeCompare'), false, 'shelter_registry.js must not contain localeCompare');
+    assert.equal(occSrc.includes('Intl.Collator'), false, 'shelter_occupancy.js must not contain Intl.Collator');
+    assert.equal(regSrc.includes('Intl.Collator'), false, 'shelter_registry.js must not contain Intl.Collator');
+  });
+
+  // SHELTER-PATCH-04: derived sheltered_in reconstruction from occupant_ids
+  test('SHELTER-PATCH-04: derived sheltered_in mapping is 100% reconstructed from canonical occupant_ids', () => {
+    const rawSnapshot = {
+      shelters: [
+        { shelter_id: 's_rec', shelter_type: 'CUSTOM', position: { x: 1, y: 1, z: 0 }, capacity: 3, security_factor: 0.5 }
+      ],
+      occupancies: [
+        { shelter_id: 's_rec', capacity: 3, current_occupancy: 2, occupant_ids: ['alpha', 'beta'] }
+      ]
+    };
+    const reg = ShelterRegistry.deserialize(rawSnapshot, { boundary });
+    assert.equal(reg.getShelteredIn('alpha'), 's_rec');
+    assert.equal(reg.getShelteredIn('beta'), 's_rec');
+    assert.equal(reg.getShelteredIn('gamma'), null);
+    reg.assertConsistency();
+  });
+
+  // SHELTER-PATCH-05: derived mapping cannot mutate canonical occupancy
+  test('SHELTER-PATCH-05: derived mapping has no independent mutation method to alter occupancy', () => {
+    const reg = new ShelterRegistry({ boundary });
+    assert.equal(typeof reg.setShelteredIn, 'undefined');
+    assert.equal(typeof reg.mutateShelteredIn, 'undefined');
+  });
+
+  // SHELTER-PATCH-06: canonical occupancy and derived reverse mapping consistency
+  test('SHELTER-PATCH-06: assertConsistency verifies bidirectional consistency and catches corruption', () => {
+    const reg = new ShelterRegistry({ boundary });
+    reg.registerShelter({
+      shelter_id: 's_cons',
+      shelter_type: ShelterType.TREE_CAVITY,
+      position: { x: 2, y: 2, z: 0 },
+      capacity: 3,
+      security_factor: 0.7
+    });
+    const sw = createMockSpatialWorld();
+    sw.register({ entity_id: 'ant_c', position: { x: 2, y: 2, z: 0 } });
+    reg.enterShelter({ spatialWorld: sw, organismId: 'ant_c', shelterId: 's_cons' });
+
+    // Should pass cleanly
+    reg.assertConsistency();
+
+    // Corrupt derived map
+    reg._derivedShelteredIn.set('ghost_ant', 's_cons');
+    assert.throws(() => reg.assertConsistency(), /Ghost derived reference/);
+
+    // Revert and corrupt occupant list
+    reg._derivedShelteredIn.delete('ghost_ant');
+    reg._occupancies.get('s_cons')._occupant_ids.push('unmapped_ant');
+    assert.throws(() => reg.assertConsistency(), /Discrepancy/);
+  });
+
+  // SHELTER-PATCH-07: cross-shelter duplicate organism rejected
+  test('SHELTER-PATCH-07: cross-shelter duplicate organism fails fast upon deserialization', () => {
+    const badSnapshot = {
+      shelters: [
+        { shelter_id: 's_1', shelter_type: 'CUSTOM', position: { x: 0, y: 0, z: 0 }, capacity: 2, security_factor: 0.5 },
+        { shelter_id: 's_2', shelter_type: 'CUSTOM', position: { x: 1, y: 1, z: 0 }, capacity: 2, security_factor: 0.5 }
+      ],
+      occupancies: [
+        { shelter_id: 's_1', capacity: 2, current_occupancy: 1, occupant_ids: ['ant_dupe'] },
+        { shelter_id: 's_2', capacity: 2, current_occupancy: 1, occupant_ids: ['ant_dupe'] }
+      ]
+    };
+    assert.throws(() => ShelterRegistry.deserialize(badSnapshot, { boundary }), /multiple shelters/);
+  });
+
+  // SHELTER-PATCH-08: inconsistent canonical/derived snapshot rejected
+  test('SHELTER-PATCH-08: inconsistent current_occupancy and occupant_ids.length snapshot is rejected', () => {
+    const bad = {
+      shelters: [
+        { shelter_id: 's_bad', shelter_type: 'CUSTOM', position: { x: 0, y: 0, z: 0 }, capacity: 3, security_factor: 0.5 }
+      ],
+      occupancies: [
+        { shelter_id: 's_bad', capacity: 3, current_occupancy: 99, occupant_ids: ['org_1'] }
+      ]
+    };
+    assert.throws(() => ShelterRegistry.deserialize(bad, { boundary }), /current_occupancy 99 !== occupant_ids.length 1/);
+  });
+
+  // SHELTER-PATCH-09: deterministic cold-start reconstruction
+  test('SHELTER-PATCH-09: deterministic cold-start produces clean verifiable state', () => {
+    const reg = new ShelterRegistry({ boundary });
+    reg.registerShelter({
+      shelter_id: 'cold_s',
+      shelter_type: ShelterType.TREE_CAVITY,
+      position: { x: 10, y: 10, z: 0 },
+      capacity: 4,
+      security_factor: 0.8
+    });
+    const sw = createMockSpatialWorld();
+    for (const id of ['o3', 'o1', 'o2']) {
+      sw.register({ entity_id: id, position: { x: 10, y: 10, z: 0 } });
+      reg.enterShelter({ spatialWorld: sw, organismId: id, shelterId: 'cold_s' });
+    }
+
+    const snap = reg.serialize();
+    const restored = ShelterRegistry.deserialize(snap, { boundary });
+    restored.assertConsistency();
+
+    assert.deepEqual(restored.serialize(), snap);
+  });
+
+  // SHELTER-PATCH-10: deterministic replay after patch
+  test('SHELTER-PATCH-10: 100 replay runs after patch produce bit-for-bit identical serialization', () => {
+    function run() {
+      const reg = new ShelterRegistry({ boundary });
+      reg.registerShelter({
+        shelter_id: 's_replay',
+        shelter_type: ShelterType.TREE_CAVITY,
+        position: { x: 10, y: 10, z: 0 },
+        capacity: 10,
+        security_factor: 0.9,
+        micro_climate_offsets: { temperature_delta: -2, humidity_delta: 0.1 }
+      });
+      const sw = createMockSpatialWorld();
+      const ids = ['ant_5', 'ant_2', 'ant_8', 'ant_1', 'ant_9'];
+      for (const id of ids) {
+        sw.register({ entity_id: id, position: { x: 10, y: 10, z: 0 } });
+        reg.enterShelter({ spatialWorld: sw, organismId: id, shelterId: 's_replay' });
+      }
+      return JSON.stringify(reg.serialize());
+    }
+
+    const first = run();
+    for (let i = 0; i < 100; i++) {
+      assert.equal(run(), first);
+    }
+  });
+
 });

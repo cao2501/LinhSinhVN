@@ -44,7 +44,7 @@ export class ShelterOccupancy {
     this.shelter_id = shelter_id;
     this.capacity = capacity;
     /** @type {string[]} */
-    this._occupant_ids = [...occupant_ids].sort((a, b) => a.localeCompare(b));
+    this._occupant_ids = [...occupant_ids].sort((a, b) => (a < b ? -1 : (a > b ? 1 : 0)));
   }
 
   get current_occupancy() {
@@ -80,7 +80,7 @@ export class ShelterOccupancy {
     }
 
     this._occupant_ids.push(organismId);
-    this._occupant_ids.sort((a, b) => a.localeCompare(b));
+    this._occupant_ids.sort((a, b) => (a < b ? -1 : (a > b ? 1 : 0)));
   }
 
   /**

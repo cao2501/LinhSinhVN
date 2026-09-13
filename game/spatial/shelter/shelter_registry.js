@@ -120,7 +120,7 @@ export class ShelterRegistry {
    * @returns {ReadonlyArray<ShelterDefinition>}
    */
   getAllShelters() {
-    const sorted = Array.from(this._shelters.values()).sort((a, b) => a.shelter_id.localeCompare(b.shelter_id));
+    const sorted = Array.from(this._shelters.values()).sort((a, b) => (a.shelter_id < b.shelter_id ? -1 : (a.shelter_id > b.shelter_id ? 1 : 0)));
     return Object.freeze(sorted);
   }
 
@@ -187,9 +187,39 @@ export class ShelterRegistry {
    * Deterministic ordering: shelter_id ASC.
    * @returns {object}
    */
+
+  /**
+   * Asserts 100% bidirectional consistency between canonical occupant_ids[]
+   * and derived _derivedShelteredIn mapping. Fails fast if any discrepancy.
+   */
+  assertConsistency() {
+    // 1. Verify every occupant in each shelter points back via derived map
+    const seenOccupants = new Set();
+    for (const [shelterId, occ] of this._occupancies.entries()) {
+      for (const orgId of occ.occupant_ids) {
+        if (seenOccupants.has(orgId)) {
+          throw new Error(`[ShelterRegistry.assertConsistency] Cross-shelter duplicate: '${orgId}' occupies multiple shelters`);
+        }
+        seenOccupants.add(orgId);
+        const derived = this._derivedShelteredIn.get(orgId);
+        if (derived !== shelterId) {
+          throw new Error(`[ShelterRegistry.assertConsistency] Discrepancy: organism '${orgId}' in shelter '${shelterId}' but derived map says '${derived}'`);
+        }
+      }
+    }
+
+    // 2. Verify every derived entry exists in canonical occupant_ids
+    for (const [orgId, shelterId] of this._derivedShelteredIn.entries()) {
+      const occ = this._occupancies.get(shelterId);
+      if (!occ || !occ.hasOccupant(orgId)) {
+        throw new Error(`[ShelterRegistry.assertConsistency] Ghost derived reference: organism '${orgId}' points to shelter '${shelterId}', but is not a canonical occupant`);
+      }
+    }
+  }
+
   serialize() {
     const shelters = Array.from(this._shelters.values())
-      .sort((a, b) => a.shelter_id.localeCompare(b.shelter_id))
+      .sort((a, b) => (a.shelter_id < b.shelter_id ? -1 : (a.shelter_id > b.shelter_id ? 1 : 0)))
       .map(s => ({
         shelter_id: s.shelter_id,
         shelter_type: s.shelter_type,
@@ -202,7 +232,7 @@ export class ShelterRegistry {
       }));
 
     const occupancies = Array.from(this._occupancies.values())
-      .sort((a, b) => a.shelter_id.localeCompare(b.shelter_id))
+      .sort((a, b) => (a.shelter_id < b.shelter_id ? -1 : (a.shelter_id > b.shelter_id ? 1 : 0)))
       .map(o => o.snapshot());
 
     return Object.freeze({
