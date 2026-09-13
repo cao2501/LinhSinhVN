@@ -148,7 +148,11 @@ export function evaluateOrganismBehavior({
 
   const hazardRating = environmentSnapshot.hazard_rating ?? 0.0;
   const timeOfDay = environmentSnapshot.time_of_day ?? 'DAY';
-  const primaryPeriod = speciesProfile.behavior_profile?.primary_activity_period ?? 'CATHEMERAL';
+  const profilePeriod = speciesProfile.behavior_profile?.primary_activity_period ?? 'CATHEMERAL';
+  // Subterranean/non-reproductive feeding stages feed continuously (cathemeral), not bound to adult nocturnal/diurnal solar cycles
+  const primaryPeriod = (!isReproductiveStage && currentStage?.is_feeding_stage)
+    ? 'CATHEMERAL'
+    : profilePeriod;
   const isCircadianActive = isCircadianActivePeriod(primaryPeriod, timeOfDay);
 
   // 5. Evaluate behavior candidates for this individual organism
@@ -493,7 +497,7 @@ export function evaluatePopulationBehavior({
       : speciesProfiles[speciesId];
 
     if (!profile) {
-      throw new Error(`SpeciesProfile not found for organism '${organism.organism_id}' with species '${speciesId}'`);
+      throw new Error(`Unknown species profile for species_id '${speciesId}' on organism '${organism.organism_id}'`);
     }
 
     const result = evaluateOrganismBehavior({

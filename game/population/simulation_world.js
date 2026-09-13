@@ -26,6 +26,9 @@ import { canonicalizeEvents } from './event_canonicalizer.js';
 import { applyReproductionDeltas, validateReproductionDeltas } from '../lifecycle/organism_state.js';
 
 import { createResourcePool } from './resource_pool.js';
+import { evaluatePopulationBehavior } from '../behavior/behavior_decision_engine.js';
+import { resolveEcologicalInteractions } from '../behavior/interaction_resolver.js';
+import { buildBiologicalInputBundle } from '../behavior/biological_input_bundle_factory.js';
 
 const HEX_64_REGEX = /^0x[0-9a-fA-F]{16}$/;
 
@@ -363,12 +366,99 @@ export class SimulationWorld {
     // =================================================================
     // SECTION 1: PRE-COMMIT DERIVATION & STAGING (ZERO AUTHORITATIVE MUTATION)
     // =================================================================
+    const tickSeed = this.getPopulationTickSeed();
+    const aliveOrganisms = preTickOrganisms.filter(org => org.is_alive === true);
+
+    // Build species profile map for behavior & interaction resolution
+    const speciesProfilesMap = new Map();
+    if (speciesProfile.species_id) {
+      speciesProfilesMap.set(speciesProfile.species_id, speciesProfile);
+    }
+    for (const org of aliveOrganisms) {
+      if (org.species_id && !speciesProfilesMap.has(org.species_id) && this._speciesRegistry.has(org.species_id)) {
+        speciesProfilesMap.set(org.species_id, this._speciesRegistry.get(org.species_id));
+      }
+    }
+
+    // 1. Behavior Evaluation (PURE - Phase 07-B)
+    const behaviorOutput = evaluatePopulationBehavior({
+      organisms: aliveOrganisms,
+      speciesProfiles: speciesProfilesMap,
+      environmentSnapshot: envBefore,
+      simulationTick: currentTick,
+      simulationSeed: this._simulationSeed,
+      populationId: this._population.populationId,
+      enableStochasticTieBreak: false
+    });
+    const behaviorDecisions = behaviorOutput.decisions;
+    const actionIntents = behaviorOutput.intents;
+
+    // 2. Interaction Resolution (PURE - Phase 07-C)
+    const interactionResult = resolveEcologicalInteractions({
+      actionIntents,
+      behaviorDecisions,
+      resourcePoolSnapshot: pool,
+      environmentSnapshot: envBefore,
+      populationId: this._population.populationId,
+      simulationTick: currentTick,
+      speciesProfiles: speciesProfilesMap
+    });
+
+    // 3. Assemble Biological Input Bundle (PURE - Phase 07-C)
+    const biologicalInputBundle = buildBiologicalInputBundle({
+      interactionResult,
+      behaviorDecisions,
+      environmentSnapshot: envBefore,
+      populationId: this._population.populationId,
+      simulationTick: currentTick,
+      speciesProfiles: speciesProfilesMap,
+      organisms: aliveOrganisms
+    });
+
+    // Compute canonical resource allocation conforming to resource_allocation.schema.json
+    let totalRequested = 0;
+    let totalAllocated = 0;
+    const allocationsList = [];
+
+    for (const org of aliveOrganisms) {
+      const orgId = org.organism_id;
+      const forageIntent = actionIntents.find(it => it.organism_id === orgId && it.action_type === 'FORAGE');
+      const requested = forageIntent?.payload?.requested_quantity ?? 0.0;
+
+      const allocMap = interactionResult.resource_allocations?.[orgId] || {};
+      let allocated = 0.0;
+      for (const rType of Object.keys(allocMap)) {
+        allocated += Number(allocMap[rType] || 0.0);
+      }
+      const unmet = Math.max(0.0, requested - allocated);
+      totalRequested += requested;
+      totalAllocated += allocated;
+
+      allocationsList.push(Object.freeze({
+        organism_id: orgId,
+        requested_amount: requested,
+        allocated_amount: allocated,
+        unmet_amount: unmet
+      }));
+    }
+
+    const canonicalResourceAllocation = Object.freeze({
+      schema_version: '1.0.0',
+      initial_resource: availableQuantity,
+      total_requested: totalRequested,
+      total_allocated: totalAllocated,
+      remaining_resource: Math.max(0.0, availableQuantity - totalAllocated),
+      allocations: Object.freeze(allocationsList)
+    });
+
     let bioCandidates = null;
 
-    // 1. Biological evaluation candidate generation
+    // 4. Biological evaluation candidate generation (Consumes BiologicalInputBundle)
     const coordResult = executePopulationBiologicalTick(this, deltaTime, {
       species_profile: speciesProfile,
       resource_pool: pool,
+      input_bundle: biologicalInputBundle,
+      resource_allocation: canonicalResourceAllocation,
       advance_clock: false,
       commit: false, // ZERO mutation on authoritative PopulationRegistry or pool
       on_candidate_states: (clones) => {
@@ -380,8 +470,7 @@ export class SimulationWorld {
       throw new Error('Biological evaluation failed to produce candidate states');
     }
 
-    // 2. Reproduction planning on candidate states
-    const tickSeed = this.getPopulationTickSeed();
+    // 5. Reproduction planning on candidate states
     const stagedRepro = this._breedingScheduler.stageBreedingPhase(
       bioCandidates,
       this._speciesRegistry,
@@ -540,7 +629,10 @@ export class SimulationWorld {
       events: canonicalEvents,
       resource_allocation: coordResult.resource_allocation,
       organism_results: coordResult.organism_results,
-      reproduction: stagedRepro.summary
+      reproduction: stagedRepro.summary,
+      behavior: Object.freeze(behaviorDecisions),
+      interactions: interactionResult,
+      biological_input_bundle: biologicalInputBundle
     });
   }
 

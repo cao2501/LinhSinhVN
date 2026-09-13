@@ -78,6 +78,9 @@ export function resolveEcologicalInteractions({
     if (typeof resourcePoolSnapshot.getQuantity === 'function') {
       return Number(resourcePoolSnapshot.getQuantity(resourceType) ?? 0.0);
     }
+    if (typeof resourcePoolSnapshot.availableQuantity === 'number') {
+      return Number(resourcePoolSnapshot.availableQuantity);
+    }
     return Number(resourcePoolSnapshot[resourceType] ?? 0.0);
   }
 

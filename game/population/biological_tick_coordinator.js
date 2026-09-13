@@ -131,22 +131,56 @@ export function executePopulationBiologicalTick(world, deltaTime, options = {}) 
   const aliveOrganisms = allOrganisms.filter(org => org.is_alive === true);
 
   // -----------------------------------------------------------------
-  // PHASE B: Demand Generation
+  // OPTIONAL BEHAVIOR INTEGRATION: Input Bundle Resolution
   // -----------------------------------------------------------------
-  const demands = [];
-  for (const org of aliveOrganisms) {
-    const demand = calculateOrganismResourceDemand(org, speciesProfile, deltaTime);
-    demands.push(demand);
-  }
+  const inputBundle = options.input_bundle || null;
+  let allocationResult = null;
+  let allocationMap = new Map();
 
-  // -----------------------------------------------------------------
-  // PHASE C: PURE Resource Allocation
-  // -----------------------------------------------------------------
-  // Pure mathematical allocation: does NOT mutate activePool or world state
-  const allocationResult = allocateResourceDemands(availableResource, demands);
-  const allocationMap = new Map(
-    allocationResult.allocations.map(a => [a.organism_id, a.allocated_amount])
-  );
+  if (inputBundle && inputBundle.organism_inputs) {
+    // Sourced directly from BiologicalInputBundle (TASK 07-D)
+    for (const org of aliveOrganisms) {
+      const orgInput = inputBundle.organism_inputs[org.organism_id];
+      const food = orgInput ? Number(orgInput.allocated_food ?? 0.0) : 0.0;
+      allocationMap.set(org.organism_id, food);
+    }
+    if (options.resource_allocation) {
+      allocationResult = options.resource_allocation;
+    } else {
+      let totalAlloc = 0;
+      for (const amt of allocationMap.values()) totalAlloc += amt;
+      allocationResult = Object.freeze({
+        schema_version: '1.0.0',
+        initial_resource: availableResource,
+        total_requested: totalAlloc,
+        total_allocated: totalAlloc,
+        remaining_resource: Math.max(0.0, availableResource - totalAlloc),
+        allocations: Object.freeze(
+          Array.from(allocationMap.entries()).map(([orgId, amt]) => ({
+            organism_id: orgId,
+            allocated_amount: amt
+          }))
+        )
+      });
+    }
+  } else {
+    // -----------------------------------------------------------------
+    // PHASE B: Demand Generation (Legacy fallback)
+    // -----------------------------------------------------------------
+    const demands = [];
+    for (const org of aliveOrganisms) {
+      const demand = calculateOrganismResourceDemand(org, speciesProfile, deltaTime);
+      demands.push(demand);
+    }
+
+    // -----------------------------------------------------------------
+    // PHASE C: PURE Resource Allocation (Legacy fallback)
+    // -----------------------------------------------------------------
+    allocationResult = allocateResourceDemands(availableResource, demands);
+    allocationMap = new Map(
+      allocationResult.allocations.map(a => [a.organism_id, a.allocated_amount])
+    );
+  }
 
   // -----------------------------------------------------------------
   // PHASE D: Isolated Biological Evaluation
@@ -165,9 +199,14 @@ export function executePopulationBiologicalTick(world, deltaTime, options = {}) 
       ? [{ resource_id: primaryResource, quantity: allocatedAmount }]
       : [];
 
+    const orgInput = inputBundle?.organism_inputs?.[org.organism_id];
+    const orgEnv = orgInput && typeof orgInput.shelter_security_factor === 'number'
+      ? { ...lifecycleEnv, shelter_security_factor: orgInput.shelter_security_factor }
+      : lifecycleEnv;
+
     const tickInput = {
       deltaTime,
-      environment: lifecycleEnv,
+      environment: orgEnv,
       resources
     };
 
