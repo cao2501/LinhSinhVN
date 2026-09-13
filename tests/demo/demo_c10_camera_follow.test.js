@@ -13,7 +13,7 @@
  * - Strict epoch isolation via selection signal
  * - Zero simulation authority, zero IPC, zero duplicate organism interpolation
  * 
- * Covers C10-C01 through C10-C30 specified by Game Director.
+ * Covers C10-C01 through C10-C31 specified by Game Director.
  */
 
 import { describe, it } from 'node:test';
@@ -212,6 +212,8 @@ class CameraFollowModel {
     const rec = this.overlay.getOrganismCameraTarget(orgId);
     if (!rec.valid) return false;
 
+    this.isTracking = false;
+    this.targetId = '';
     this.isFocusing = true;
     this.focusId = orgId;
     this.focusStartedAlive = Boolean(rec.is_alive);
@@ -827,6 +829,44 @@ describe('DEMO-01-C / C-10-C: Organism Focus & Camera Follow Suite', () => {
 
     assert.strictEqual(camera.isFocusing, false, 'Focus completes upon reaching target');
     assert.ok(Math.abs(camera.position.x - 488.0) < 1.0, 'Camera reached dead organism location');
+  });
+
+  // --- C10-C31: F supersedes active Follow and enters one-shot Focus ---
+  it('C10-C31: F supersedes active Follow and enters one-shot Focus', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_a', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    overlay.selectOrganism('org_a');
+    const camera = new CameraFollowModel(overlay, { x: 400, y: 400 });
+    camera.zoom = 2.0;
+    camera.position = { x: 200.0, y: 200.0 };
+
+    // 1 & 2: Start following A
+    assert.strictEqual(camera.startFollowing('org_a'), true);
+
+    // 3: Assert Follow active
+    assert.strictEqual(camera.isTracking, true);
+    assert.strictEqual(camera.targetId, 'org_a');
+    assert.strictEqual(camera.isFocusing, false);
+
+    // 4: Trigger focusOrganism("org_a")
+    assert.strictEqual(camera.focusOrganism('org_a'), true);
+
+    // 5: Assert immediately mutually exclusive transition
+    assert.strictEqual(camera.isTracking, false, 'Follow must be cancelled when Focus starts');
+    assert.strictEqual(camera.targetId, '', 'targetId must be cleared');
+    assert.strictEqual(camera.isFocusing, true, 'Focus must become active');
+    assert.strictEqual(camera.focusId, 'org_a', 'focusId must be set');
+
+    // 6: Process one frame
+    const posStart = { ...camera.position };
+    camera.process(0.016);
+
+    // 7 & 8: Assert camera actually moves through Focus logic and remains active
+    assert.ok(camera.position.x > posStart.x, 'Camera moves toward target via Focus smoothing');
+    assert.strictEqual(camera.isFocusing, true, 'Focus remains active during transit');
+    assert.strictEqual(camera.isTracking, false, 'Follow remains inactive');
   });
 
   // --- C10-C28: Frozen-domain guard ---

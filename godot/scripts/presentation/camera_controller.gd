@@ -117,6 +117,9 @@ func focus_organism(org_id: String) -> bool:
 		return false
 
 	# Focus is permitted for both alive and dead organisms on active layer
+	# Focus supersedes active follow
+	_is_tracking = false
+	_target_id = ""
 	_is_focusing = true
 	_focus_id = org_id
 	_focus_started_alive = bool(target_rec.get("is_alive", false))
