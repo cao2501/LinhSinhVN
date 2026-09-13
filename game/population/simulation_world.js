@@ -108,6 +108,10 @@ export class SimulationWorld {
 
     // Population breeding scheduler (TASK 06-C)
     this._breedingScheduler = createPopulationBreedingScheduler();
+
+    // Telemetry observer (TASK 07-E)
+    this._telemetryRecorder = config.telemetry_recorder || config.telemetryRecorder || null;
+    this._onTelemetryError = config.on_telemetry_error || config.onTelemetryError || null;
   }
 
   /**
@@ -276,6 +280,30 @@ export class SimulationWorld {
    */
   setBreedingScheduler(scheduler) {
     this._breedingScheduler = scheduler;
+  }
+
+  /**
+   * Access configured TelemetryRecorder observer, if any.
+   * @returns {object|null}
+   */
+  get telemetryRecorder() {
+    return this._telemetryRecorder || null;
+  }
+
+  /**
+   * Configure TelemetryRecorder observer.
+   * @param {object|null} recorder
+   */
+  setTelemetryRecorder(recorder) {
+    this._telemetryRecorder = recorder || null;
+  }
+
+  /**
+   * Configure telemetry error handler callback.
+   * @param {Function|null} handler
+   */
+  setTelemetryErrorHandler(handler) {
+    this._onTelemetryError = typeof handler === 'function' ? handler : null;
   }
 
   getResourcePool() {
@@ -609,7 +637,7 @@ export class SimulationWorld {
     // =================================================================
     // SECTION 4: FINAL RESULT PACKAGING (PRECOMPUTED ARTIFACTS)
     // =================================================================
-    return Object.freeze({
+    const finalResult = Object.freeze({
       schema_version: '1.0.0',
       simulation_tick: currentTick,
       next_simulation_tick: nextTick,
@@ -634,6 +662,22 @@ export class SimulationWorld {
       interactions: interactionResult,
       biological_input_bundle: biologicalInputBundle
     });
+
+    // TASK 07-E: Safe post-commit telemetry observation (Failure Isolated)
+    if (this._telemetryRecorder && typeof this._telemetryRecorder.record === 'function') {
+      try {
+        this._telemetryRecorder.record(finalResult, {
+          simulation_seed: this._simulationSeed,
+          population_id: this._population.populationId
+        });
+      } catch (telemetryErr) {
+        if (typeof this._onTelemetryError === 'function') {
+          this._onTelemetryError(telemetryErr);
+        }
+      }
+    }
+
+    return finalResult;
   }
 
   snapshot() {

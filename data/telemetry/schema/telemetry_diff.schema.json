@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/telemetry/telemetry_diff.schema.json",
+  "title": "TelemetryDiff",
+  "description": "Deterministic divergence diff report comparing two telemetry snapshots",
+  "type": "object",
+  "required": [
+    "equal",
+    "first_divergence_path",
+    "differences"
+  ],
+  "properties": {
+    "equal": {
+      "type": "boolean"
+    },
+    "first_divergence_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "differences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "expected",
+          "actual"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "expected": {},
+          "actual": {}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/telemetry/telemetry_digest.schema.json",
+  "title": "TelemetryDigest",
+  "description": "Deterministic 64-bit cryptographic digest artifact for simulation telemetry",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "simulation_tick",
+    "algorithm",
+    "hash"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "algorithm": {
+      "type": "string",
+      "enum": [
+        "FNV-1a-64"
+      ]
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    }
+  },
+  "additionalProperties": false
+}

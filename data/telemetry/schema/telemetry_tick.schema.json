@@ -1,0 +1,143 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/telemetry/telemetry_tick.schema.json",
+  "title": "TelemetryTickRecord",
+  "description": "Deterministic, immutable post-commit telemetry record of a simulation world tick",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "simulation_seed",
+    "population_id",
+    "simulation_tick",
+    "next_simulation_tick",
+    "delta_time",
+    "environment",
+    "resources",
+    "behavior",
+    "interactions",
+    "biological_inputs",
+    "biological_outcomes",
+    "reproduction",
+    "census",
+    "events",
+    "digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "simulation_seed": {
+      "type": "string"
+    },
+    "population_id": {
+      "type": "string"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "next_simulation_tick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "delta_time": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "before",
+        "after"
+      ],
+      "properties": {
+        "before": {
+          "type": "object"
+        },
+        "after": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "resources": {
+      "type": "object",
+      "required": [
+        "initial",
+        "demanded",
+        "allocated",
+        "unmet",
+        "remaining"
+      ],
+      "properties": {
+        "initial": {
+          "type": "number",
+          "minimum": 0
+        },
+        "demanded": {
+          "type": "number",
+          "minimum": 0
+        },
+        "allocated": {
+          "type": "number",
+          "minimum": 0
+        },
+        "unmet": {
+          "type": "number",
+          "minimum": 0
+        },
+        "remaining": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "behavior": {
+      "type": [
+        "array",
+        "object"
+      ]
+    },
+    "interactions": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "biological_inputs": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "biological_outcomes": {
+      "type": [
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "reproduction": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "census": {
+      "type": "object"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    }
+  },
+  "additionalProperties": false
+}
