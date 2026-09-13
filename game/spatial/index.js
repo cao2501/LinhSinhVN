@@ -13,3 +13,4 @@ export * from './locomotion/index.js';
 export * from './habitat/index.js';
 export * from './micro_climate/index.js';
 export * from './shelter/index.js';
+export * from './resource_zone/index.js';
