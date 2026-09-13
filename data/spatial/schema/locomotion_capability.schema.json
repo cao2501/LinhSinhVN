@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LocomotionCapability",
+  "description": "Structured data-driven locomotion capability specification for LinhSinhVN (organism-owned capability profile; does NOT define world topology)",
+  "type": "object",
+  "required": [
+    "capability_id",
+    "is_available",
+    "supported_layers",
+    "supported_transitions"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "capability_id": {
+      "type": "string",
+      "enum": [
+        "CRAWL",
+        "BURROW",
+        "FLIGHT"
+      ],
+      "description": "Locomotion mode identifier"
+    },
+    "is_available": {
+      "type": "boolean",
+      "description": "Whether this locomotion capability is currently active/unlocked on the organism"
+    },
+    "supported_layers": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      },
+      "description": "Capability compatibility list: Z-strata where this capability is anatomically functional (authoritative topology remains owned by SpatialWorld)"
+    },
+    "supported_transitions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Capability compatibility list: Transition types this capability can attempt (authoritative topology requirements remain owned by SpatialWorld)"
+    },
+    "speed_modifier": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Integer speed scaling factor in basis points (100 = 1.0x baseline)"
+    }
+  }
+}

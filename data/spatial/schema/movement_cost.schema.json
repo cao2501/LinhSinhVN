@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MovementCost",
+  "description": "Deterministic spatial traversal cost specification (independent from biological energy expenditure)",
+  "type": "object",
+  "required": [
+    "grid_distance",
+    "base_cost",
+    "transition_cost",
+    "total_cost",
+    "unit"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "grid_distance": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Canonical Grid Distance between source and destination"
+    },
+    "base_cost": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Base spatial movement cost points"
+    },
+    "transition_cost": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Vertical layer or topological transition cost points"
+    },
+    "total_cost": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total non-negative spatial traversal cost"
+    },
+    "unit": {
+      "type": "string",
+      "enum": [
+        "SPATIAL_COST_POINTS"
+      ],
+      "description": "Spatial gameplay cost unit (explicitly non-biological)"
+    }
+  }
+}

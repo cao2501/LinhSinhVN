@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TraversalRequest",
+  "description": "Pure request structure for evaluating spatial traversal validity and cost",
+  "type": "object",
+  "required": [
+    "organism_id",
+    "from",
+    "to",
+    "locomotion_mode",
+    "capabilities"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "organism_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Authoritative organism entity identifier"
+    },
+    "from": {
+      "$ref": "spatial_coordinate.schema.json"
+    },
+    "to": {
+      "$ref": "spatial_coordinate.schema.json"
+    },
+    "locomotion_mode": {
+      "type": "string",
+      "enum": [
+        "CRAWL",
+        "BURROW",
+        "FLIGHT"
+      ],
+      "description": "Selected locomotion capability for this traversal attempt"
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "locomotion_capability.schema.json"
+      },
+      "description": "Active capabilities available to the organism"
+    }
+  }
+}

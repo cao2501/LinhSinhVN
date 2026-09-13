@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TraversalResult",
+  "description": "Pure evaluation output of a traversal request",
+  "type": "object",
+  "required": [
+    "status",
+    "reason",
+    "cost"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "VALID",
+        "INVALID"
+      ],
+      "description": "Legality status of the requested traversal"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "OUT_OF_BOUNDS",
+        "INVALID_COORDINATE",
+        "CAPABILITY_REQUIRED",
+        "TOPOLOGY_BLOCKED",
+        "SAME_POSITION",
+        "DEAD_ORGANISM",
+        "UNSUPPORTED_TRANSITION"
+      ],
+      "description": "Deterministic reason code for validation outcome"
+    },
+    "cost": {
+      "$ref": "movement_cost.schema.json"
+    },
+    "target_facing": {
+      "type": "string",
+      "enum": [
+        "NORTH",
+        "EAST",
+        "SOUTH",
+        "WEST",
+        "NORTH_EAST",
+        "NORTH_WEST",
+        "SOUTH_EAST",
+        "SOUTH_WEST",
+        "NONE"
+      ],
+      "description": "Deterministic resulting facing direction upon successful traversal"
+    }
+  }
+}
