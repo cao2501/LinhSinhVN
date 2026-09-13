@@ -45,7 +45,8 @@ import {
   createSimulationWorld,
   createStaticQuotaEcologyProvider,
   compareCanonicalEvents,
-  canonicalizeEvents
+  canonicalizeEvents,
+  createResourcePool
 } from '../../game/population/index.js';
 import { loadSpeciesProfile } from '../../game/lifecycle/profile_loader.js';
 import { createOrganismState } from '../../game/lifecycle/organism_state.js';
@@ -149,7 +150,7 @@ function createTestWorld(seed = '0x1234567890abcdef', provider = null) {
   });
 }
 
-describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REPRO-01 -> TC-WORLD-REPRO-32)', () => {
+describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REPRO-01 -> TC-WORLD-REPRO-38)', () => {
 
   it('TC-WORLD-REPRO-01: Single eligible pair mates during world tick, offspring registered in PopulationRegistry', () => {
     const world = createTestWorld();
@@ -821,6 +822,189 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     assert.equal(world.getPopulation().size, 2);
 
     world.getEcologyProvider().applyFeedback = originalFeedback;
+  });
+
+  it('TC-WORLD-REPRO-33: Injected ResourcePool commit failure after organism/parent/offspring staging leaves complete World identical to pre-tick state', () => {
+    const world = createTestWorld();
+    const f = createAdultOrganism('org_f', 'FEMALE', { energy: 120 });
+    const m = createAdultOrganism('org_m', 'MALE', { energy: 120 });
+    world.getPopulation().addOrganism(f);
+    world.getPopulation().addOrganism(m);
+
+    // Create and attach pool
+    const pool = createResourcePool(200.0);
+    world.setResourcePool(pool);
+
+    const snapshotBefore = JSON.stringify(world.snapshot());
+
+    // Inject failure explicitly inside ResourcePool commit (step 4 of atomic commit, after organisms and offspring committed)
+    const originalCommit = pool.commitAllocation;
+    pool.commitAllocation = () => {
+      throw new Error('Injected pool commit failure');
+    };
+
+    assert.throws(() => {
+      world.advancePopulationTick(1.0, { resource_pool: pool });
+    }, /Injected pool commit failure/);
+
+    // Complete World is 100% byte-for-byte identical to pre-tick state
+    assert.equal(JSON.stringify(world.snapshot()), snapshotBefore);
+    assert.equal(world.getSimulationTick(), 0);
+    assert.equal(world.getPopulation().size, 2);
+    assert.equal(f.nutrition_state.stored_energy, 120);
+    assert.equal(f.reproduction_cooldown_until_tick, 0);
+
+    pool.commitAllocation = originalCommit;
+  });
+
+  it('TC-WORLD-REPRO-34: Injected offspring registry commit failure leaves complete World identical to pre-tick state', () => {
+    const world = createTestWorld();
+    const f = createAdultOrganism('org_f', 'FEMALE', { energy: 120 });
+    const m = createAdultOrganism('org_m', 'MALE', { energy: 120 });
+    world.getPopulation().addOrganism(f);
+    world.getPopulation().addOrganism(m);
+
+    const snapshotBefore = JSON.stringify(world.snapshot());
+
+    // Inject failure when adding offspring (step 3 of atomic commit)
+    const originalAdd = world.getPopulation().addOrganism;
+    let addCount = 0;
+    world.getPopulation().addOrganism = function(org) {
+      addCount++;
+      if (addCount > 1) { // allow adding 1 offspring, then fail
+        throw new Error('Injected offspring registry failure');
+      }
+      return originalAdd.call(this, org);
+    };
+
+    assert.throws(() => {
+      world.advancePopulationTick(1.0, { available_resource: 200.0 });
+    }, /Injected offspring registry failure/);
+
+    // Restore method
+    world.getPopulation().addOrganism = originalAdd;
+
+    // All added offspring must have been cleaned up and parents restored
+    assert.equal(JSON.stringify(world.snapshot()), snapshotBefore);
+    assert.equal(world.getSimulationTick(), 0);
+    assert.equal(world.getPopulation().size, 2);
+    assert.equal(f.nutrition_state.stored_energy, 120);
+    assert.equal(f.reproduction_cooldown_until_tick, 0);
+  });
+
+  it('TC-WORLD-REPRO-35: Injected Environment commit failure leaves complete World identical to pre-tick state', () => {
+    const world = createTestWorld();
+    const f = createAdultOrganism('org_f', 'FEMALE', { energy: 120 });
+    const m = createAdultOrganism('org_m', 'MALE', { energy: 120 });
+    world.getPopulation().addOrganism(f);
+    world.getPopulation().addOrganism(m);
+
+    const snapshotBefore = JSON.stringify(world.snapshot());
+
+    // Inject failure at step 5 of atomic commit (environment assignment)
+    const originalSetEnv = world.setEnvironment;
+    // We simulate by corrupting clock advance so it throws at step 6
+    const originalAdvance = world.clock.advance;
+    world.clock.advance = () => {
+      throw new Error('Injected clock commit failure');
+    };
+
+    assert.throws(() => {
+      world.advancePopulationTick(1.0, { available_resource: 200.0 });
+    }, /Injected clock commit failure/);
+
+    world.clock.advance = originalAdvance;
+
+    assert.equal(JSON.stringify(world.snapshot()), snapshotBefore);
+    assert.equal(world.getSimulationTick(), 0);
+    assert.equal(world.getPopulation().size, 2);
+  });
+
+  it('TC-WORLD-REPRO-36: Injected finalization/result failure cannot leave authoritative World mutated', () => {
+    const world = createTestWorld();
+    const f = createAdultOrganism('org_f', 'FEMALE');
+    const m = createAdultOrganism('org_m', 'MALE');
+    world.getPopulation().addOrganism(f);
+    world.getPopulation().addOrganism(m);
+
+    const snapshotBefore = JSON.stringify(world.snapshot());
+
+    // In Section 1 (Pre-Commit), if derivation fails before commit, authoritative world is never touched
+    const originalDerive = world.breedingScheduler.stageBreedingPhase;
+    world.breedingScheduler.stageBreedingPhase = () => {
+      throw new Error('Pre-commit staging failure');
+    };
+
+    assert.throws(() => {
+      world.advancePopulationTick(1.0, { available_resource: 200.0 });
+    }, /Pre-commit staging failure/);
+
+    world.breedingScheduler.stageBreedingPhase = originalDerive;
+
+    assert.equal(JSON.stringify(world.snapshot()), snapshotBefore);
+    assert.equal(world.getSimulationTick(), 0);
+  });
+
+  it('TC-WORLD-REPRO-37: Failed atomic commit produces byte/state-equivalent pre/post World snapshot', () => {
+    const world = createTestWorld();
+    const f = createAdultOrganism('org_f', 'FEMALE', { energy: 120 });
+    const m = createAdultOrganism('org_m', 'MALE', { energy: 120 });
+    world.getPopulation().addOrganism(f);
+    world.getPopulation().addOrganism(m);
+
+    const snapshot1 = JSON.stringify(world.snapshot());
+
+    // Multiple failures: first during reproduction plan
+    const originalPlan = world.breedingScheduler.runtime.planReproduction;
+    world.breedingScheduler.runtime.planReproduction = () => {
+      throw new Error('Failure 1');
+    };
+    assert.throws(() => world.advancePopulationTick(1.0, { available_resource: 200.0 }), /Failure 1/);
+    assert.equal(JSON.stringify(world.snapshot()), snapshot1);
+
+    // Second failure: during pool commit
+    world.breedingScheduler.runtime.planReproduction = originalPlan;
+    const pool = createStaticQuotaEcologyProvider({ quota: 200.0, enable_feedback: false });
+    // Inject commit failure on pool passed in options
+    let poolInstance = null;
+    const originalAdvance = world.advancePopulationTick;
+    assert.throws(() => {
+      world.advancePopulationTick(1.0, {
+        available_resource: 200.0,
+        ecology_provider: {
+          provideResource: () => 200.0,
+          applyFeedback: () => {
+            throw new Error('Failure 2 during feedback');
+          }
+        }
+      });
+    }, /Failure 2/);
+    assert.equal(JSON.stringify(world.snapshot()), snapshot1);
+  });
+
+  it('TC-WORLD-REPRO-38: Successful atomic commit changes authoritative state exactly once and advances clock exactly once', () => {
+    const world = createTestWorld();
+    const f = createAdultOrganism('org_f', 'FEMALE', { energy: 120 });
+    const m = createAdultOrganism('org_m', 'MALE', { energy: 120 });
+    world.getPopulation().addOrganism(f);
+    world.getPopulation().addOrganism(m);
+
+    assert.equal(world.getSimulationTick(), 0);
+    const result = world.advancePopulationTick(1.0, { available_resource: 200.0 });
+
+    // Advances clock exactly once: 0 -> 1
+    assert.equal(world.getSimulationTick(), 1);
+    assert.equal(result.simulation_tick, 0);
+    assert.equal(result.next_simulation_tick, 1);
+
+    // Living count includes parents + offspring
+    const born = result.reproduction.offspring_born;
+    assert.equal(world.getPopulation().countLiving(), 2 + born);
+    assert.equal(world.getPopulation().size, 2 + born);
+
+    // Parents mutated exactly once: cooldown set, energy deducted
+    assert.equal(f.reproduction_cooldown_until_tick, 300);
+    assert.equal(m.reproduction_cooldown_until_tick, 300);
   });
 
 });

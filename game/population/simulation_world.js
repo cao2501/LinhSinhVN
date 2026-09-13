@@ -23,7 +23,7 @@ import { SpeciesRegistry, createSpeciesRegistry } from './species_registry.js';
 import { derivePopulationCensus } from './population_census.js';
 import { createPopulationBreedingScheduler } from './population_breeding_scheduler.js';
 import { canonicalizeEvents } from './event_canonicalizer.js';
-import { applyReproductionDeltas } from '../lifecycle/organism_state.js';
+import { applyReproductionDeltas, validateReproductionDeltas } from '../lifecycle/organism_state.js';
 
 import { createResourcePool } from './resource_pool.js';
 
@@ -355,85 +355,106 @@ export class SimulationWorld {
       throw new Error('Population world tick requires an explicit ecology_provider, available_resource, or ResourcePool');
     }
 
-    // Pre-tick snapshot of all organisms for failure rollback and transition-level census derivation
+    // Capture complete pre-tick state snapshot of authoritative world for guaranteed rollback
     const preTickOrganisms = this._population.listOrganisms().map(org => JSON.parse(JSON.stringify(org)));
     const preTickMap = new Map(preTickOrganisms.map(org => [org.organism_id, org]));
     const prePoolQuantity = pool.availableQuantity;
 
+    // =================================================================
+    // SECTION 1: PRE-COMMIT DERIVATION & STAGING (ZERO AUTHORITATIVE MUTATION)
+    // =================================================================
     let bioCandidates = null;
 
+    // 1. Biological evaluation candidate generation
+    const coordResult = executePopulationBiologicalTick(this, deltaTime, {
+      species_profile: speciesProfile,
+      resource_pool: pool,
+      advance_clock: false,
+      commit: false, // ZERO mutation on authoritative PopulationRegistry or pool
+      on_candidate_states: (clones) => {
+        bioCandidates = clones;
+      }
+    });
+
+    if (!bioCandidates) {
+      throw new Error('Biological evaluation failed to produce candidate states');
+    }
+
+    // 2. Reproduction planning on candidate states
+    const tickSeed = this.getPopulationTickSeed();
+    const stagedRepro = this._breedingScheduler.stageBreedingPhase(
+      bioCandidates,
+      this._speciesRegistry,
+      currentTick,
+      tickSeed,
+      options
+    );
+
+    // 3. Resource Summary & Bounds Invariant Checks (Rule 6)
+    const initial = coordResult.resource_allocation.initial_resource;
+    const demanded = coordResult.resource_allocation.total_requested;
+    const allocated = coordResult.resource_allocation.total_allocated;
+    const remaining = coordResult.resource_allocation.remaining_resource;
+    const unmet = demanded - allocated;
+
+    if (allocated < 0 || allocated > demanded + 1e-9 || allocated > initial + 1e-9) {
+      throw new Error(`Resource invariant violated: allocated (${allocated}) outside valid bounds`);
+    }
+    if (remaining < 0 || unmet < 0) {
+      throw new Error('Resource invariant violated: remaining or unmet cannot be negative');
+    }
+
+    const consumptionSummary = {
+      initial_resource: initial,
+      total_requested: demanded,
+      total_allocated: allocated,
+      remaining_resource: remaining,
+      unmet_demand: unmet
+    };
+
+    // 4. Ecology feedback candidate generation
+    let envAfter;
+    if (provider && options.ecology_enabled !== false) {
+      envAfter = provider.applyFeedback(envBefore, consumptionSummary, { world: this });
+    } else {
+      envAfter = envBefore;
+    }
+    validateEnvironmentState(envAfter);
+
+    // 5. Pre-commit event canonicalization (calculated BEFORE authoritative commit)
+    const allEvents = [...coordResult.events, ...(stagedRepro.stagedEvents || [])];
+    const canonicalEvents = canonicalizeEvents(allEvents);
+
+    // 6. Pre-commit census derivation on candidate cohort (calculated BEFORE authoritative commit)
+    // Construct candidate cohort: start with ALL pre-tick organisms (including dead), update with evaluated clones, then apply parent deltas, then add newborn offspring
+    const candidateAllMap = new Map(preTickOrganisms.map(o => [o.organism_id, JSON.parse(JSON.stringify(o))]));
+    for (const bioClone of bioCandidates) {
+      candidateAllMap.set(bioClone.organism_id, JSON.parse(JSON.stringify(bioClone)));
+    }
+    for (const item of stagedRepro.stagedPlans) {
+      const pProf = item.speciesProfile;
+      const targetFemale = candidateAllMap.get(item.pair.female.organism_id);
+      const targetMale = candidateAllMap.get(item.pair.male.organism_id);
+      if (targetFemale) applyReproductionDeltas(targetFemale, item.plan.parent_deltas.parent_a, pProf);
+      if (targetMale) applyReproductionDeltas(targetMale, item.plan.parent_deltas.parent_b, pProf);
+    }
+    const candidateCohort = [...candidateAllMap.values(), ...stagedRepro.stagedChildren];
+    const candidateCensus = derivePopulationCensus(preTickMap, { listOrganisms: () => candidateCohort }, currentTick);
+
+    // =================================================================
+    // SECTION 2: FULL PREFLIGHT VALIDATION
+    // =================================================================
+    for (const item of stagedRepro.stagedPlans) {
+      const pProf = item.speciesProfile;
+      validateReproductionDeltas(item.pair.female, item.plan.parent_deltas.parent_a, pProf);
+      validateReproductionDeltas(item.pair.male, item.plan.parent_deltas.parent_b, pProf);
+    }
+
+    // =================================================================
+    // SECTION 3: ATOMIC AUTHORITATIVE COMMIT (ALL-OR-NOTHING WITH GUARANTEED ROLLBACK)
+    // =================================================================
+    let nextTick;
     try {
-      // -----------------------------------------------------------------
-      // PHASE 2: Isolated Biological Evaluation (PLAN / STAGE ONLY, zero commit)
-      // -----------------------------------------------------------------
-      const coordResult = executePopulationBiologicalTick(this, deltaTime, {
-        species_profile: speciesProfile,
-        resource_pool: pool,
-        advance_clock: false,
-        commit: false, // ZERO mutation on authoritative PopulationRegistry or pool
-        on_candidate_states: (clones) => {
-          bioCandidates = clones;
-        }
-      });
-
-      if (!bioCandidates) {
-        throw new Error('Biological evaluation failed to produce candidate states');
-      }
-
-      // -----------------------------------------------------------------
-      // PHASE 3: Population-Level Reproduction Planning (STAGE ONLY, zero commit)
-      // -----------------------------------------------------------------
-      // Evaluates candidates against POST-BIOLOGICAL candidate states (energy deducted from feeding/metabolism)
-      const tickSeed = this.getPopulationTickSeed();
-      const stagedRepro = this._breedingScheduler.stageBreedingPhase(
-        bioCandidates,
-        this._speciesRegistry,
-        currentTick,
-        tickSeed,
-        options
-      );
-
-      // Resource summary invariants (Rule 6)
-      const initial = coordResult.resource_allocation.initial_resource;
-      const demanded = coordResult.resource_allocation.total_requested;
-      const allocated = coordResult.resource_allocation.total_allocated;
-      const remaining = coordResult.resource_allocation.remaining_resource;
-      const unmet = demanded - allocated;
-
-      if (allocated < 0 || allocated > demanded + 1e-9 || allocated > initial + 1e-9) {
-        throw new Error(`Resource invariant violated: allocated (${allocated}) outside valid bounds`);
-      }
-      if (remaining < 0 || unmet < 0) {
-        throw new Error('Resource invariant violated: remaining or unmet cannot be negative');
-      }
-
-      const consumptionSummary = {
-        initial_resource: initial,
-        total_requested: demanded,
-        total_allocated: allocated,
-        remaining_resource: remaining,
-        unmet_demand: unmet
-      };
-
-      // -----------------------------------------------------------------
-      // PHASE 4: INVARIANT-POPTICK-03 & Rule 7/8: Ecology Feedback Candidate
-      // -----------------------------------------------------------------
-      let envAfter;
-      if (provider && options.ecology_enabled !== false) {
-        envAfter = provider.applyFeedback(envBefore, consumptionSummary, { world: this });
-      } else {
-        envAfter = envBefore;
-      }
-      validateEnvironmentState(envAfter);
-
-      // -----------------------------------------------------------------
-      // PHASE 5: Full Preflight Validation
-      // -----------------------------------------------------------------
-      // (All preflight checks on biological states, deltas, and environment have passed)
-
-      // =================================================================
-      // PHASE 6: SINGLE ATOMIC COMMIT
-      // =================================================================
       // 1. Commit biological candidate states to authoritative organisms
       for (const bioClone of bioCandidates) {
         const target = this._population.getOrganism(bioClone.organism_id);
@@ -456,7 +477,7 @@ export class SimulationWorld {
         this._population.addOrganism(child);
       }
 
-      // 4. Commit resource allocation to pool exactly once
+      // 4. Commit resource allocation to pool
       if (pool && typeof pool.commitAllocation === 'function') {
         pool.commitAllocation(coordResult.resource_allocation);
       }
@@ -465,47 +486,18 @@ export class SimulationWorld {
       this._environment = deepFreeze(envAfter);
 
       // 6. Advance clock exactly once (INVARIANT-POPTICK-04)
-      const nextTick = this._clock.advance(deltaTime);
+      nextTick = this._clock.advance(deltaTime);
 
-      // 7. Canonicalize all events across biological and reproduction domains
-      const allEvents = [...coordResult.events, ...(stagedRepro.stagedEvents || [])];
-      const canonicalEvents = canonicalizeEvents(allEvents);
-
-      // 8. Pure-derived PopulationCensus (INVARIANT-POPTICK-05)
-      const census = derivePopulationCensus(preTickMap, this._population, currentTick);
-
-      return Object.freeze({
-        schema_version: '1.0.0',
-        simulation_tick: currentTick,
-        next_simulation_tick: nextTick,
-        delta_time: deltaTime,
-        environment: Object.freeze({
-          before: envBefore,
-          after: this._environment
-        }),
-        resources: Object.freeze({
-          initial,
-          demanded,
-          allocated,
-          unmet,
-          remaining
-        }),
-        census,
-        events: canonicalEvents,
-        resource_allocation: coordResult.resource_allocation,
-        organism_results: coordResult.organism_results,
-        reproduction: stagedRepro.summary
-      });
-    } catch (err) {
-      // TOTAL TRANSACTION ROLLBACK ON FAILURE
-      // 1. Remove any newly added organisms (offspring)
+    } catch (commitErr) {
+      // GUARANTEED TOTAL ROLLBACK IF ANY COMMIT OPERATION FAILS
+      // 1. Remove any newly added offspring
       const currentList = this._population.listOrganisms();
       for (const org of currentList) {
         if (!preTickMap.has(org.organism_id)) {
           this._population.removeOrganism(org.organism_id);
         }
       }
-      // 2. Restore pre-tick state for all pre-existing organisms
+      // 2. Restore all pre-existing organisms to pre-tick state
       for (const preOrg of preTickOrganisms) {
         const target = this._population.getOrganism(preOrg.organism_id);
         if (target) {
@@ -519,11 +511,37 @@ export class SimulationWorld {
       if (pool && typeof pool._availableQuantity === 'number') {
         pool._availableQuantity = prePoolQuantity;
       }
-      // 4. Environment remains envBefore
+      // 4. Restore environment
       this._environment = envBefore;
-      // 5. Clock remains currentTick (N)
-      throw err;
+      // 5. Clock remains currentTick
+      throw commitErr;
     }
+
+    // =================================================================
+    // SECTION 4: FINAL RESULT PACKAGING (PRECOMPUTED ARTIFACTS)
+    // =================================================================
+    return Object.freeze({
+      schema_version: '1.0.0',
+      simulation_tick: currentTick,
+      next_simulation_tick: nextTick,
+      delta_time: deltaTime,
+      environment: Object.freeze({
+        before: envBefore,
+        after: this._environment
+      }),
+      resources: Object.freeze({
+        initial,
+        demanded,
+        allocated,
+        unmet,
+        remaining
+      }),
+      census: candidateCensus,
+      events: canonicalEvents,
+      resource_allocation: coordResult.resource_allocation,
+      organism_results: coordResult.organism_results,
+      reproduction: stagedRepro.summary
+    });
   }
 
   snapshot() {
