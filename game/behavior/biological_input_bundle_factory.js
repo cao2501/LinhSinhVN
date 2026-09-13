@@ -1,5 +1,5 @@
 /**
- * LinhSinhVN — Biological Input Bundle Factory (TASK 07-C)
+ * LinhSinhVN — Biological Input Bundle Factory (TASK 07-C Corrected)
  * 
  * Pure factory assembling the single authoritative input package for BiologicalTickCoordinator.
  * Strictly prevents shadow state creation and prevents double resource consumption.
@@ -8,10 +8,11 @@
  * - PURE FUNCTION: Zero mutation of input states.
  * - NO SHADOW STATE: Contains ONLY tick inputs required by BiologicalTickCoordinator:
  *   { allocated_food, shelter_security_factor, behavior_type, metabolic_activity_rate }.
- * - ZERO INVENTED BIOLOGICAL CONSTANTS:
- *   `metabolic_activity_rate` is loaded strictly from data contracts:
- *   `stage.metabolic_drain_multiplier` defined in `speciesProfile.lifecycle_profile.stages`.
- *   Not hardcoded as REST=0.5 / FORAGE=1.2 / FLEE=1.8.
+ * - ZERO INVENTED BIOLOGICAL CONSTANTS / NO ACCIDENTAL ALIAS:
+ *   `metabolic_activity_rate` represents the behavioral energy expenditure multiplier.
+ *   It is NOT an alias for lifecycle's `metabolic_drain_multiplier` (basal expenditure).
+ *   In Phase 07-C, it defaults to the neutral baseline of 1.0 (or is read if explicitly configured
+ *   under `speciesProfile.behavior_profile.behavior_parameters.metabolic_activity_rate`).
  * - SINGLE SOURCE OF NUTRITION:
  *   `allocated_food` comes strictly from InteractionResult, never from direct ResourcePool mutation.
  */
@@ -27,8 +28,8 @@ import { BEHAVIOR_TYPES } from './constants.js';
  * @param {object} params.environmentSnapshot - Immutable EnvironmentState snapshot
  * @param {string} params.populationId - Unique population identifier
  * @param {number} params.simulationTick - Current simulation tick integer
- * @param {object|Map<string, object>} params.speciesProfiles - Species profile map
- * @param {Array<object>} [params.organisms] - Optional list of OrganismState objects to resolve stages
+ * @param {object|Map<string, object>} [params.speciesProfiles] - Optional species profile map
+ * @param {Array<object>} [params.organisms] - Optional list of OrganismState objects
  * @returns {object} Pure BiologicalInputBundle
  */
 export function buildBiologicalInputBundle({
@@ -37,7 +38,7 @@ export function buildBiologicalInputBundle({
   environmentSnapshot,
   populationId,
   simulationTick,
-  speciesProfiles,
+  speciesProfiles = {},
   organisms = []
 }) {
   if (!interactionResult || typeof interactionResult !== 'object') {
@@ -56,7 +57,7 @@ export function buildBiologicalInputBundle({
     throw new TypeError('simulationTick must be a non-negative integer');
   }
 
-  // Create organism lookup map for stage and species resolution
+  // Create organism lookup map for species resolution if provided
   const organismMap = new Map();
   for (const org of organisms) {
     organismMap.set(org.organism_id, org);
@@ -78,10 +79,9 @@ export function buildBiologicalInputBundle({
     // 2. Shelter security factor sourced strictly from InteractionResult or Environment
     const shelterAssignment = interactionResult.shelter_assignments?.[organismId];
     const shelterSecurity = shelterAssignment?.effective_security_factor
-      ?? (environmentSnapshot.shelter_security_factor ?? 0.80);
+      ?? Number((environmentSnapshot.shelter_security_factor ?? 0.80).toFixed(4));
 
-    // 3. Metabolic activity rate sourced strictly from approved species profile lifecycle stages
-    // (stage.metabolic_drain_multiplier). Zero invented biological constants.
+    // 3. Metabolic activity rate: neutral baseline 1.0 (no arbitrary aliasing with lifecycle drain)
     let metabolicActivityRate = 1.0;
     const orgState = organismMap.get(organismId);
     if (orgState) {
@@ -91,10 +91,9 @@ export function buildBiologicalInputBundle({
         : speciesProfiles[speciesId];
 
       if (profile) {
-        const stageId = orgState.current_stage_id;
-        const stage = profile.lifecycle_profile?.stages?.find(s => s.stage_id === stageId);
-        if (stage && typeof stage.metabolic_drain_multiplier === 'number') {
-          metabolicActivityRate = stage.metabolic_drain_multiplier;
+        const bpParams = profile.behavior_profile?.behavior_parameters;
+        if (bpParams && typeof bpParams.metabolic_activity_rate === 'number') {
+          metabolicActivityRate = bpParams.metabolic_activity_rate;
         }
       }
     }

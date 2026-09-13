@@ -1,5 +1,5 @@
 /**
- * LinhSinhVN — Ecological Interaction Resolver (TASK 07-C)
+ * LinhSinhVN — Ecological Interaction Resolver (TASK 07-C Corrected)
  * 
  * Pure, deterministic ecological arbiter resolving resource competition,
  * shelter access, and multi-organism interaction requests.
@@ -21,6 +21,9 @@
  *   07-B generates individual intent requests.
  *   07-C resolves multi-organism arbitration without biological assimilation.
  *   Biological assimilation belongs strictly to BiologicalTickCoordinator.
+ * - ZERO INVENTED MECHANICS:
+ *   FLEE creates NO invented biological security baseline (no 0.3 / 0.5 multiplier).
+ *   Organisms without active shelter acquisition inherit the natural environmental security factor directly.
  */
 
 import {
@@ -181,8 +184,9 @@ export function resolveEcologicalInteractions({
   }
 
   // 2. ARBITRATE SHELTER COMPETITION (SEEK_SHELTER)
-  // Evaluates shelter security based on environmental security baseline
-  const envShelterSecurity = environmentSnapshot.shelter_security_factor ?? 0.80;
+  // Evaluates shelter security based on environmental security baseline.
+  // No invented constants: natural security factor is inherited directly.
+  const envShelterSecurity = Number((environmentSnapshot.shelter_security_factor ?? 0.80).toFixed(4));
 
   for (const intent of shelterIntents) {
     const organismId = intent.organism_id;
@@ -191,12 +195,12 @@ export function resolveEcologicalInteractions({
     if (envShelterSecurity >= minSecurity) {
       shelter_assignments[organismId] = {
         shelter_acquired: true,
-        effective_security_factor: Number(envShelterSecurity.toFixed(4))
+        effective_security_factor: envShelterSecurity
       };
     } else {
       shelter_assignments[organismId] = {
         shelter_acquired: false,
-        effective_security_factor: Number((envShelterSecurity * 0.5).toFixed(4))
+        effective_security_factor: envShelterSecurity
       };
       unmet_intents.push({
         organism_id: organismId,
@@ -234,17 +238,9 @@ export function resolveEcologicalInteractions({
     }
   }
 
-  // 4. RESOLVE FLEE INTENTS
-  for (const intent of otherIntents) {
-    if (intent.action_type === BEHAVIOR_TYPES.FLEE) {
-      shelter_assignments[intent.organism_id] = {
-        shelter_acquired: false,
-        effective_security_factor: Number((envShelterSecurity * 0.3).toFixed(4))
-      };
-    }
-  }
-
-  // Ensure every participating organism has entry in resource_allocations and shelter_assignments
+  // 4. NATURAL SECURITY FALLBACK FOR ALL PARTICIPATING ORGANISMS
+  // Organisms without SEEK_SHELTER (including FLEE, REST, FORAGE, EXPLORE) inherit
+  // the ambient environmental security factor directly. Zero invented multipliers.
   for (const decision of behaviorDecisions) {
     const orgId = decision.organism_id;
     if (!resource_allocations[orgId]) {
@@ -253,7 +249,7 @@ export function resolveEcologicalInteractions({
     if (!shelter_assignments[orgId]) {
       shelter_assignments[orgId] = {
         shelter_acquired: false,
-        effective_security_factor: Number((envShelterSecurity * 0.5).toFixed(4))
+        effective_security_factor: envShelterSecurity
       };
     }
   }

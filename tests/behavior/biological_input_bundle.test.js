@@ -254,7 +254,7 @@ describe('Phase 07-C: Biological Input Bundle Tests', () => {
     assert.equal(JSON.stringify(mockEnv), envSnapshot);
   });
 
-  it('TC-BEH-45: metabolic_activity_rate sourced from speciesProfile.lifecycle_profile.stages', () => {
+  it('TC-BEH-45: metabolic_activity_rate defaults to neutral 1.0 baseline (not an accidental alias for lifecycle drain)', () => {
     const bundle = buildBiologicalInputBundle({
       interactionResult: mockInteractionResult,
       behaviorDecisions: mockDecisions,
@@ -265,13 +265,29 @@ describe('Phase 07-C: Biological Input Bundle Tests', () => {
       organisms
     });
 
-    // In xylotrupes_rhinoceros_proto.json:
-    // STAGE_EGG: metabolic_drain_multiplier = 0.2
-    // STAGE_LARVA: metabolic_drain_multiplier = 1.0
-    // STAGE_ADULT: metabolic_drain_multiplier = 1.0
-    assert.equal(bundle.organism_inputs.org_egg.metabolic_activity_rate, 0.2);
+    // Baseline is strictly neutral 1.0 without accidental aliasing
+    assert.equal(bundle.organism_inputs.org_egg.metabolic_activity_rate, 1.0);
     assert.equal(bundle.organism_inputs.org_larva.metabolic_activity_rate, 1.0);
     assert.equal(bundle.organism_inputs.org_adult.metabolic_activity_rate, 1.0);
+  });
+
+  it('TC-BEH-49: metabolic_activity_rate can be explicitly configured via behavior_parameters', () => {
+    const customProfile = JSON.parse(JSON.stringify(profile));
+    customProfile.behavior_profile.behavior_parameters = {
+      metabolic_activity_rate: 1.5
+    };
+
+    const bundle = buildBiologicalInputBundle({
+      interactionResult: mockInteractionResult,
+      behaviorDecisions: mockDecisions,
+      environmentSnapshot: mockEnv,
+      populationId: 'pop_test',
+      simulationTick: 1,
+      speciesProfiles: { xylotrupes_rhinoceros_proto: customProfile },
+      organisms
+    });
+
+    assert.equal(bundle.organism_inputs.org_adult.metabolic_activity_rate, 1.5);
   });
 
   it('TC-BEH-46: 100-run replay determinism', () => {

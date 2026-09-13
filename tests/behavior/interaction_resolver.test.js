@@ -442,4 +442,66 @@ describe('Phase 07-C: Ecological Interaction Resolver Tests', () => {
       assert.equal(current, baseline, `Run ${i} diverged!`);
     }
   });
+  it('TC-BEH-47: FLEE intent creates zero invented biological safety effect', () => {
+    const fleeIntent = {
+      schema_version: '1.0.0',
+      intent_id: 'intent_flee_01',
+      organism_id: 'org_flee',
+      species_id: 'xylotrupes_rhinoceros_proto',
+      action_type: BEHAVIOR_TYPES.FLEE,
+      urgency_class: URGENCY_CLASSES.CRITICAL,
+      priority_score: 0.95,
+      clash_power: 10.0,
+      payload: {
+        threat_source: 'ENVIRONMENTAL_HAZARD'
+      }
+    };
+
+    const env = makeEnv(0.75); // Environmental security is 0.75
+    const result = resolveEcologicalInteractions({
+      actionIntents: [fleeIntent],
+      behaviorDecisions: [makeDecision('org_flee', BEHAVIOR_TYPES.FLEE)],
+      resourcePoolSnapshot: {},
+      environmentSnapshot: env,
+      populationId: 'pop_test',
+      simulationTick: 1
+    });
+
+    // FLEE does NOT invent a 0.3 artificial multiplier; it inherits the ambient factor (0.75) directly
+    assert.equal(result.shelter_assignments.org_flee.shelter_acquired, false);
+    assert.equal(result.shelter_assignments.org_flee.effective_security_factor, 0.75);
+  });
+
+  it('TC-BEH-48: FLEE purity: does not mutate environment, does not alter organism state, does not generate movement', () => {
+    const fleeIntent = {
+      schema_version: '1.0.0',
+      intent_id: 'intent_flee_02',
+      organism_id: 'org_flee_pure',
+      species_id: 'xylotrupes_rhinoceros_proto',
+      action_type: BEHAVIOR_TYPES.FLEE,
+      urgency_class: URGENCY_CLASSES.CRITICAL,
+      priority_score: 0.95,
+      clash_power: 10.0,
+      payload: {
+        threat_source: 'OVERCROWDING'
+      }
+    };
+
+    const env = makeEnv(0.60);
+    const envBefore = JSON.stringify(env);
+    const intentBefore = JSON.stringify(fleeIntent);
+
+    const result = resolveEcologicalInteractions({
+      actionIntents: [fleeIntent],
+      behaviorDecisions: [makeDecision('org_flee_pure', BEHAVIOR_TYPES.FLEE)],
+      resourcePoolSnapshot: {},
+      environmentSnapshot: env,
+      populationId: 'pop_test',
+      simulationTick: 1
+    });
+
+    assert.equal(JSON.stringify(env), envBefore);
+    assert.equal(JSON.stringify(fleeIntent), intentBefore);
+    assert.ok(result);
+  });
 });

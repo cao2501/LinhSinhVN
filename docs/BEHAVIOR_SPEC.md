@@ -148,3 +148,15 @@ Cau truc Discriminated Union theo `action_type`:
 - **Phase 07-B (COMPLETED - Commit fafaa4e + corrective patch)**: Individual Behavior Decision Engine (Pure evaluation mapping, Seed derivation, Urgency classification, Circadian alignment, Stage restrictions, Parameter classification).
 - **Phase 07-C (LOCKED - Pending Audit)**: Interaction Resolver & Biological Input Bundle Factory (Deterministic arbitration, Conservation law).
 - **Phase 07-D (LOCKED)**: SimulationWorld Integration (Ghep noi vao pipeline 9 buoc cua World Tick, kiem chung toan dien qua integration tests).
+
+### 4.3 FLEE Semantics & Safety Isolation (Phase 07-C Corrected)
+- `FLEE` bieu dien y dinh tron tranh moi nguy cap bach (`threat_source: ENVIRONMENTAL_HAZARD | PREDATOR | OVERCROWDING`).
+- **Khong tao effect an ninh gia**: FLEE khong tu tao bat ky he so an ninh gia nao (nhu 0.3 hay 0.5 baseline).
+- Ca the khong thuc hien `SEEK_SHELTER` (bao gom FLEE, REST, FORAGE, EXPLORE) huong nguyen ven muc an toan tu nhien cua sinh canh `environmentSnapshot.shelter_security_factor`.
+- Tuyet doi khong co movement, pathfinding, combat hay dot bien chi so sinh hoc trong 07-C.
+
+### 4.4 Metabolic Activity Rate Ownership vs Lifecycle Drain (Phase 07-C Corrected)
+- `metabolic_activity_rate` trong `BiologicalInputBundle`:
+  * Dai dien cho he so gia tang / giam bot tieu hao nang luong tu hanh vi trong tick do.
+  * **KHONG PHAI LA ALIAS** cua `metabolic_drain_multiplier` trong lifecycle stage. `metabolic_drain_multiplier` la he so tieu hao chuyen hoa co so (basal expenditure) cua giai doan phat trien (Egg/Pupa = 0.2, Larva/Adult = 1.0 trong `tick_pipeline.js`).
+  * Trong Phase 07-C, `metabolic_activity_rate` mac dinh mang gia tri trung tinh tuyet doi `1.0` (zero invented constants, khong lam bien dang cong thuc chuyen hoa co so cua lifecycle engine). Neu loai co cau hinh ro rang trong `speciesProfile.behavior_profile.behavior_parameters.metabolic_activity_rate` thi moi nap tu do.
