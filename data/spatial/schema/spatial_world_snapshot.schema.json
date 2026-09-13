@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpatialWorldSnapshot",
+  "description": "Deterministic canonical snapshot of SpatialWorld",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "boundary",
+    "entities"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "1.0.0"
+      ]
+    },
+    "boundary": {
+      "type": "object",
+      "required": [
+        "width",
+        "height",
+        "z_min",
+        "z_max"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "z_min": {
+          "type": "integer"
+        },
+        "z_max": {
+          "type": "integer"
+        }
+      }
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "$ref": "spatial_entity_state.schema.json"
+      }
+    }
+  }
+}

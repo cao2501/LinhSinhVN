@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpatialEntityState",
+  "description": "Deterministic spatial entity registration state owned by SpatialWorld",
+  "type": "object",
+  "required": [
+    "entity_id",
+    "position"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "entity_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique spatial entity identifier"
+    },
+    "position": {
+      "$ref": "spatial_coordinate.schema.json"
+    },
+    "facing": {
+      "type": "string",
+      "enum": [
+        "NORTH",
+        "EAST",
+        "SOUTH",
+        "WEST",
+        "NORTH_EAST",
+        "NORTH_WEST",
+        "SOUTH_EAST",
+        "SOUTH_WEST",
+        "NONE"
+      ],
+      "description": "Optional canonical orientation"
+    },
+    "entity_type": {
+      "type": "string",
+      "description": "Optional category of spatial entity"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional deterministic metadata record"
+    }
+  }
+}
