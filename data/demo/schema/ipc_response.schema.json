@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linhsinhvn.game/demo/ipc_response.schema.json",
+  "title": "IpcResponse",
+  "description": "Deterministic response envelope for local loopback TCP IPC bridge (DEMO-01-B)",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "request_id",
+    "success",
+    "command"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "protocol_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Locked protocol version"
+    },
+    "request_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Client-generated request identifier echoed back exactly, or null on early framing failure"
+    },
+    "success": {
+      "type": "boolean",
+      "description": "Execution success or failure outcome"
+    },
+    "command": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Dispatched command echo or null on early parse failure"
+    },
+    "result": {
+      "type": "object",
+      "description": "Successful command execution payload"
+    },
+    "error": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "MALFORMED_JSON",
+            "INVALID_REQUEST",
+            "PROTOCOL_VERSION_UNSUPPORTED",
+            "UNKNOWN_COMMAND",
+            "INVALID_ARGUMENT",
+            "MESSAGE_TOO_LARGE",
+            "SESSION_ERROR",
+            "INTERNAL_ERROR"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "success": {
+          "const": true
+        }
+      },
+      "required": [
+        "result"
+      ]
+    },
+    {
+      "properties": {
+        "success": {
+          "const": false
+        }
+      },
+      "required": [
+        "error"
+      ]
+    }
+  ]
+}

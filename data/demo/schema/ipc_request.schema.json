@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linhsinhvn.game/demo/ipc_request.schema.json",
+  "title": "IpcRequest",
+  "description": "Deterministic request envelope for local loopback TCP IPC bridge (DEMO-01-B)",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "request_id",
+    "command"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "protocol_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Locked protocol version"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Client-generated monotonic request identifier echoed in response"
+    },
+    "command": {
+      "type": "string",
+      "enum": [
+        "step",
+        "play",
+        "pause",
+        "reset",
+        "getSnapshot"
+      ],
+      "description": "Authoritative simulation command"
+    },
+    "params": {
+      "type": "object",
+      "description": "Command-specific parameters"
+    }
+  }
+}
