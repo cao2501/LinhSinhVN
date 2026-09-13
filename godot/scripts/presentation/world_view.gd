@@ -4,33 +4,124 @@ extends Node2D
 # ==============================================================================
 # LinhSinhVN Presentation Shell — DEMO-01 World View Presentation Controller
 #
-# Checkpoint: DEMO-01-C / C-02 Spatial Grid Presentation
+# Checkpoint: DEMO-01-C / C-02 Spatial Grid Presentation & C-08-A Integrated Shell
 # Coordinates Camera2D viewport framing, active Z-layer selection,
 # and delegates rendering to WorldGridCanvas and StaticZonesOverlay.
 #
+# C-08 INTEGRATION EXCEPTION:
+# - Startup connection orchestration to IpcClient
+# - Exactly-once initial getSnapshot dispatch per connection generation
+# - Passive transport auto-reconnect orchestration when DISCONNECTED (3.0s cadence)
+#
 # ZERO SIMULATION AUTHORITY:
 # - Does not step ticks
-# - Does not mutate simulation or spatial state
+# - Does not mutate simulation, biological, or spatial state
 # - Camera manipulation is purely local visual transformation
+# - Does not accept snapshots (SnapshotSynchronizer is sole authority)
+# - Does not record or generate observations (ObservationLog is sole authority)
+# - Does not trigger automatic reset or stepping upon bridge_failed
 # ==============================================================================
 
 signal z_layer_changed(new_layer: int)
 
 const Config = preload("res://scripts/presentation/demo_world_config.gd")
+const Protocol = preload("res://scripts/ipc/protocol_constants.gd")
+
+const RECONNECT_INTERVAL: float = 3.0
+
+@export var ipc_client_path: NodePath = NodePath("IpcClient")
 
 @onready var camera: Camera2D = $Camera2D
 @onready var grid_canvas: WorldGridCanvas = $WorldGridCanvas
 @onready var zones_overlay: StaticZonesOverlay = $StaticZonesOverlay
+@onready var ipc_client: IpcClient = get_node_or_null(ipc_client_path) as IpcClient
 
 # Presentation State
 var active_z_layer: int = 0
 var default_camera_zoom: float = 0.8
 
+# Presentation Connection Orchestration State (C-08-A)
+var _connection_generation: int = 0
+var _initial_snapshot_requested_gen: int = -1
+var _reconnect_accumulator: float = 0.0
+var _auto_reconnect_enabled: bool = true
+
 func _ready() -> void:
 	# Centered at (400, 400)
 	setup_camera()
 	set_active_z_layer(0)
-	get_viewport().size_changed.connect(_on_viewport_size_changed)
+	var vp: Viewport = get_viewport()
+	if vp != null:
+		vp.size_changed.connect(_on_viewport_size_changed)
+	
+	# C-08-A Startup Connection Orchestration
+	_setup_ipc_client()
+	set_process(true)
+
+func _setup_ipc_client() -> void:
+	if ipc_client == null:
+		ipc_client = get_node_or_null(ipc_client_path) as IpcClient
+	
+	if ipc_client != null:
+		if ipc_client.has_signal("connected") and not ipc_client.connected.is_connected(_on_ipc_connected):
+			ipc_client.connected.connect(_on_ipc_connected)
+		if ipc_client.has_signal("disconnected") and not ipc_client.disconnected.is_connected(_on_ipc_disconnected):
+			ipc_client.disconnected.connect(_on_ipc_disconnected)
+		if ipc_client.has_signal("bridge_failed") and not ipc_client.bridge_failed.is_connected(_on_ipc_bridge_failed):
+			ipc_client.bridge_failed.connect(_on_ipc_bridge_failed)
+		
+		# Initial startup connection attempt
+		ipc_client.connect_to_server()
+
+func _process(delta: float) -> void:
+	# C-08-A: Transport Auto-Reconnect Timer
+	# Operates ONLY when transport is strictly DISCONNECTED.
+	# Strictly inhibited during CONNECTING or CONNECTED.
+	if _auto_reconnect_enabled and ipc_client != null:
+		if ipc_client.get_connection_state() == IpcClient.ConnectionState.DISCONNECTED:
+			_reconnect_accumulator += delta
+			if _reconnect_accumulator >= RECONNECT_INTERVAL:
+				_reconnect_accumulator = 0.0
+				ipc_client.connect_to_server()
+		else:
+			_reconnect_accumulator = 0.0
+
+func _on_ipc_connected() -> void:
+	_reconnect_accumulator = 0.0
+	_connection_generation += 1
+	
+	# Exactly-once initial getSnapshot per connection generation
+	if _initial_snapshot_requested_gen != _connection_generation:
+		_initial_snapshot_requested_gen = _connection_generation
+		if ipc_client != null:
+			ipc_client.get_snapshot()
+
+func _on_ipc_disconnected() -> void:
+	# Reset reconnect accumulator to ensure clean 3.0s delay before next attempt
+	_reconnect_accumulator = 0.0
+
+func _on_ipc_bridge_failed(_error_message: String) -> void:
+	# Invariant: bridge_failed is a session error, NOT a transport disconnect.
+	# WorldView does not trigger transport reconnection or automatic reset here.
+	pass
+
+# --- Inspection & Testing API ---
+func get_connection_generation() -> int:
+	return _connection_generation
+
+func get_initial_snapshot_requested_gen() -> int:
+	return _initial_snapshot_requested_gen
+
+func get_reconnect_accumulator() -> float:
+	return _reconnect_accumulator
+
+func is_auto_reconnect_enabled() -> bool:
+	return _auto_reconnect_enabled
+
+func set_auto_reconnect_enabled(enabled: bool) -> void:
+	_auto_reconnect_enabled = enabled
+
+# --- Viewport & Camera Setup ---
 
 func setup_camera() -> void:
 	if camera == null:
