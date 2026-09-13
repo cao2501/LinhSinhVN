@@ -29,26 +29,54 @@
     },
     "delta_time": {
       "type": "number",
-      "exclusiveMinimum": 0.0
+      "exclusiveMinimum": 0
     },
     "environment": {
       "type": "object",
-      "required": ["before", "after"],
+      "required": [
+        "before",
+        "after"
+      ],
       "properties": {
-        "before": { "type": "object" },
-        "after": { "type": "object" }
+        "before": {
+          "type": "object"
+        },
+        "after": {
+          "type": "object"
+        }
       },
       "additionalProperties": false
     },
     "resources": {
       "type": "object",
-      "required": ["initial", "demanded", "allocated", "unmet", "remaining"],
+      "required": [
+        "initial",
+        "demanded",
+        "allocated",
+        "unmet",
+        "remaining"
+      ],
       "properties": {
-        "initial": { "type": "number", "minimum": 0.0 },
-        "demanded": { "type": "number", "minimum": 0.0 },
-        "allocated": { "type": "number", "minimum": 0.0 },
-        "unmet": { "type": "number", "minimum": 0.0 },
-        "remaining": { "type": "number", "minimum": 0.0 }
+        "initial": {
+          "type": "number",
+          "minimum": 0
+        },
+        "demanded": {
+          "type": "number",
+          "minimum": 0
+        },
+        "allocated": {
+          "type": "number",
+          "minimum": 0
+        },
+        "unmet": {
+          "type": "number",
+          "minimum": 0
+        },
+        "remaining": {
+          "type": "number",
+          "minimum": 0
+        }
       },
       "additionalProperties": false
     },
@@ -57,14 +85,21 @@
     },
     "events": {
       "type": "array",
-      "items": { "type": "object" }
+      "items": {
+        "type": "object"
+      }
     },
     "resource_allocation": {
       "$ref": "resource_allocation.schema.json"
     },
     "organism_results": {
       "type": "array",
-      "items": { "type": "object" }
+      "items": {
+        "type": "object"
+      }
+    },
+    "reproduction": {
+      "$ref": "population_reproduction_summary.schema.json"
     }
   },
   "additionalProperties": false

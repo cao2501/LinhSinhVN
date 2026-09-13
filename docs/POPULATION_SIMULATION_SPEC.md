@@ -379,3 +379,33 @@ Key boundaries enforced:
 - `mortality.deaths_this_tick`: organisms where `preTick.is_alive === true && postTick.is_alive === false`
 - `mortality.death_causes`: causes aggregated strictly from tick transitions
 - `total_biomass`: total living biomass
+
+---
+
+## 13. Population-Level Reproduction & World Breeding Scheduler (TASK 06-C)
+
+### 13.1 Core Invariants
+- **INVARIANT-REPRO-01 (Genetics Boundary)**: Genome recombination, independent locus sorting, mutation induction, and phenotypic derivation are 100% owned by Genetics Engine (`executeBreeding`).
+- **INVARIANT-REPRO-02 (Lifecycle Boundary)**: Parent state deltas (`stored_energy` deduction, cooldown setting) are strictly validated and applied via `LifecycleRuntime` boundary functions (`validateReproductionDeltas`, `applyReproductionDeltas`).
+- **INVARIANT-REPRO-03 (05-B BreedingSeed Compatibility)**:
+  $$\text{BreedingSeed} = \text{Hash64}(\text{ParentA.id} \mid \text{ParentB.id} \mid \text{ParentA.generation} \mid \text{BreedingNonce})$$
+- **INVARIANT-REPRO-04 (Whole-Clutch Admission & Alive-Based Capacity)**: Population capacity is evaluated against **ALIVE organisms** only (`counts.alive`). Dead organisms consume zero capacity. No partial clutch truncation: if admitting the deterministic clutch would exceed capacity, the mating pair is rejected prior to commit.
+- **INVARIANT-REPRO-05 (Same-Tick Newborn Isolation)**: Offspring born at tick $N$ are committed to `PopulationRegistry` and appear in tick $N$'s `PopulationCensus` (under `STAGE_EGG`), but they generate **zero demand** and receive **zero biological ticks** in tick $N$. They enter the biological dispatch cohort starting at tick $N+1$.
+- **INVARIANT-REPRO-06 (Single Atomic World Transaction & Single Clock Advance)**: Biological evaluation and Reproduction are staged as candidate states within a SINGLE atomic transaction. Commit applies both atomically or rolls back everything. `SimulationClock` advances $N \rightarrow N+1$ exactly once.
+
+### 13.2 Deterministic Pairing & Competition Semantics
+1. **Candidate Eligibility**: Adults matching stage requirements (`reproductive_stage_id`), minimum age (`min_mating_age_ticks`), cooldown expiration (`currentTick >= cooldown`), and sufficient stored energy ($\ge \text{energy\_cost\_per\_mating}$).
+2. **Contest Competition**:
+   - Males sorted primarily by `derivedStats.clash_power` DESC.
+   - Tie-break: `organism_id` ASC (lexicographical).
+3. **Scramble Competition**:
+   - Females sorted by `organism_id` ASC.
+   - Paired 1-1 up to $\min(\text{females}, \text{males})$.
+4. **Directional Assignment**: Heterosexual pairs assign FEMALE to Parent A and MALE to Parent B via `canonicalizeParentPair`.
+
+### 13.3 Canonical Event Ordering Contract
+All simulation events across biological, lifecycle, and reproduction domains are sorted into a single canonical sequence:
+1. `simulation_tick` ASC
+2. `organism_id` ASC
+3. `deterministic_order_index` ASC
+4. `event_id` ASC (tie-breaker)

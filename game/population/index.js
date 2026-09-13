@@ -63,3 +63,16 @@ export {
 export {
   derivePopulationCensus
 } from './population_census.js';
+
+export {
+  compareCanonicalEvents,
+  canonicalizeEvents
+} from './event_canonicalizer.js';
+
+export {
+  filterReproductionCandidates,
+  formDeterministicPairs,
+  planPopulationReproduction,
+  PopulationBreedingScheduler,
+  createPopulationBreedingScheduler
+} from './population_breeding_scheduler.js';

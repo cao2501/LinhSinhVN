@@ -2,7 +2,7 @@
  * LinhSinhVN — Deterministic Clutch Size & Sex Determination
  *
  * Generates clutch size and offspring sex strictly using DeterministicRNG and domain seeds.
- * Zero Math.random() or non-deterministic APIs.
+ * Zero nondeterministic APIs.
  */
 
 import { DeterministicRNG } from '../genetics/rng.js';

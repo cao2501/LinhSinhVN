@@ -21,6 +21,9 @@ import { computePopulationTickSeed } from './seed_contract.js';
 import { executePopulationBiologicalTick } from './biological_tick_coordinator.js';
 import { SpeciesRegistry, createSpeciesRegistry } from './species_registry.js';
 import { derivePopulationCensus } from './population_census.js';
+import { createPopulationBreedingScheduler } from './population_breeding_scheduler.js';
+import { canonicalizeEvents } from './event_canonicalizer.js';
+
 import { createResourcePool } from './resource_pool.js';
 
 const HEX_64_REGEX = /^0x[0-9a-fA-F]{16}$/;
@@ -98,6 +101,9 @@ export class SimulationWorld {
 
     // Optional shared resource pool
     this._resourcePool = null;
+
+    // Population breeding scheduler (TASK 06-C)
+    this._breedingScheduler = createPopulationBreedingScheduler();
   }
 
   /**
@@ -251,6 +257,23 @@ export class SimulationWorld {
    * Returns the optional shared ResourcePool, if one was configured.
    * @returns {object|null}
    */
+
+  /**
+   * Access the PopulationBreedingScheduler instance.
+   * @returns {PopulationBreedingScheduler}
+   */
+  get breedingScheduler() {
+    return this._breedingScheduler;
+  }
+
+  /**
+   * Configure custom PopulationBreedingScheduler.
+   * @param {PopulationBreedingScheduler} scheduler
+   */
+  setBreedingScheduler(scheduler) {
+    this._breedingScheduler = scheduler;
+  }
+
   getResourcePool() {
     return this._resourcePool || null;
   }
@@ -338,12 +361,16 @@ export class SimulationWorld {
     const prePoolQuantity = pool.availableQuantity;
 
     try {
-      // Execute biological tick with advance_clock: false (SimulationWorld owns clock commit)
+      // Phase 2: Execute biological tick with advance_clock: false (SimulationWorld owns clock commit)
       const coordResult = executePopulationBiologicalTick(this, deltaTime, {
         species_profile: speciesProfile,
         resource_pool: pool,
         advance_clock: false
       });
+
+      // Phase 3: Population-Level Reproduction Phase (TASK 06-C)
+      const tickSeed = this.getPopulationTickSeed();
+      const reproResult = this._breedingScheduler.executeBreedingPhase(this, currentTick, tickSeed, options);
 
       // Resource summary invariants (Rule 6)
       const initial = coordResult.resource_allocation.initial_resource;
@@ -368,7 +395,7 @@ export class SimulationWorld {
         unmet_demand: unmet
       };
 
-      // INVARIANT-POPTICK-03 & Rule 7/8: Ecology feedback generates Environment(t+1)
+      // Phase 4: INVARIANT-POPTICK-03 & Rule 7/8: Ecology feedback generates Environment(t+1)
       let envAfter;
       if (provider && options.ecology_enabled !== false) {
         envAfter = provider.applyFeedback(envBefore, consumptionSummary, { world: this });
@@ -378,10 +405,14 @@ export class SimulationWorld {
       }
       validateEnvironmentState(envAfter);
 
-      // INVARIANT-POPTICK-05: Pure-derived PopulationCensus
+      // Phase 5: Event Canonicalization across biological and reproduction domains
+      const allEvents = [...coordResult.events, ...(reproResult.events || [])];
+      const canonicalEvents = canonicalizeEvents(allEvents);
+
+      // Phase 6: INVARIANT-POPTICK-05: Pure-derived PopulationCensus
       const census = derivePopulationCensus(preTickMap, this._population, currentTick);
 
-      // ATOMIC COMMIT: update environment and advance clock exactly once (INVARIANT-POPTICK-04)
+      // Phase 7: ATOMIC COMMIT: update environment and advance clock exactly once (INVARIANT-POPTICK-04)
       this._environment = deepFreeze(envAfter);
       const nextTick = this._clock.advance(deltaTime);
 
@@ -402,26 +433,37 @@ export class SimulationWorld {
           remaining
         }),
         census,
-        events: coordResult.events,
+        events: canonicalEvents,
         resource_allocation: coordResult.resource_allocation,
-        organism_results: coordResult.organism_results
+        organism_results: coordResult.organism_results,
+        reproduction: reproResult.summary
       });
     } catch (err) {
       // TOTAL TRANSACTION ROLLBACK ON FAILURE
-      // Restore organisms
+      // 1. Remove any newly added organisms (offspring)
+      const currentList = this._population.listOrganisms();
+      for (const org of currentList) {
+        if (!preTickMap.has(org.organism_id)) {
+          this._population.removeOrganism(org.organism_id);
+        }
+      }
+      // 2. Restore pre-tick state for all pre-existing organisms
       for (const preOrg of preTickOrganisms) {
         const target = this._population.getOrganism(preOrg.organism_id);
         if (target) {
-          Object.assign(target, preOrg);
+          for (const key of Object.keys(target)) {
+            if (!(key in preOrg)) delete target[key];
+          }
+          Object.assign(target, JSON.parse(JSON.stringify(preOrg)));
         }
       }
-      // Restore pool
+      // 3. Restore pool
       if (pool && typeof pool._availableQuantity === 'number') {
         pool._availableQuantity = prePoolQuantity;
       }
-      // Environment remains envBefore
+      // 4. Environment remains envBefore
       this._environment = envBefore;
-      // Clock remains currentTick (N)
+      // 5. Clock remains currentTick (N)
       throw err;
     }
   }

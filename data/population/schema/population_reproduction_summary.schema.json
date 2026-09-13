@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/population/population_reproduction_summary.schema.json",
+  "title": "PopulationReproductionSummary",
+  "description": "Deterministic summary of population-level reproduction execution in a world tick",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "pairs_evaluated",
+    "pairs_mated",
+    "offspring_born",
+    "clutches_produced",
+    "events"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "pairs_evaluated": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "pairs_mated": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "offspring_born": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "clutches_produced": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "lineage_records": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "rejected_pairs": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "additionalProperties": false
+}
