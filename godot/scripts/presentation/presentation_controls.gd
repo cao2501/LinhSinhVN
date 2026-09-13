@@ -1,7 +1,7 @@
 # ==============================================================================
 # LinhSinhVN — DEMO-01-C / C-05: Presentation Controls
 # File: godot/scripts/presentation/presentation_controls.gd
-# Base: e0706ef
+# Base: e0706ef (Patch-01)
 #
 # PRESENTATION-ONLY USER INTERACTION CONTROLLER.
 # - Provides explicit user-facing controls (Play, Pause, Step +1, Reset, Sync)
@@ -11,14 +11,17 @@
 #   calculate biology, lifecycle, movement, or RNG.
 # - Authoritative playback state and ticks are received reactively via
 #   SnapshotSynchronizer signals.
-# - Z-layer bounds [-1, 2] are authoritative from WorldView/DemoWorldConfig;
-#   PresentationControls possesses zero independent Z state.
+# - Canonical Z-layer bounds [-1, 2] are authoritative from DemoWorldConfig
+#   (Config.Z_MIN and Config.Z_MAX); PresentationControls possesses zero
+#   independent Z state and delegates traversal directly to WorldView.
 # - Event-driven command in-flight lock: unlocks strictly on response_received,
 #   disconnected, bridge_failed, or immediate send failure (NO wall-clock timeouts).
 # ==============================================================================
 
 class_name PresentationControls
 extends Control
+
+const Config = preload("res://scripts/presentation/demo_world_config.gd")
 
 @export var ipc_client_path: NodePath = NodePath("../../IpcClient")
 @export var snapshot_synchronizer_path: NodePath = NodePath("../../SnapshotSynchronizer")
@@ -214,16 +217,16 @@ func _refresh_ui_state() -> void:
 	if tick_label != null:
 		tick_label.text = "Tick: %d" % _current_tick
 
-	# 2. Update Z-Layer display and boundary buttons
+	# 2. Update Z-Layer display and boundary buttons (canonical bounds from DemoWorldConfig)
 	var wv: Node = get_node_or_null(world_view_path)
 	if wv != null and wv.has_method("get_active_z_layer"):
 		var z: int = wv.get_active_z_layer()
 		if z_layer_label != null:
 			z_layer_label.text = "Z: %d" % z
 		if z_down_button != null:
-			z_down_button.disabled = (z <= -1)
+			z_down_button.disabled = (z <= Config.Z_MIN)
 		if z_up_button != null:
-			z_up_button.disabled = (z >= 2)
+			z_up_button.disabled = (z >= Config.Z_MAX)
 	else:
 		if z_down_button != null:
 			z_down_button.disabled = false

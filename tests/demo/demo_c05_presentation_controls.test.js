@@ -369,9 +369,22 @@ describe('DEMO-01-C / C-05: Presentation Controls', () => {
     assert.equal(harness.worldView.get_active_z_layer(), 2);
   });
 
-  // --- C05-13: presentation_controls.gd contains no alternate Z domain ---
-  it('C05-13: presentation_controls.gd contains no alternate Z domain (no [0, 2], no range(0, 3))', () => {
+  // --- C05-13: presentation_controls.gd contains no alternate Z domain & consumes DemoWorldConfig ---
+  it('C05-13: presentation_controls.gd consumes DemoWorldConfig canonical boundaries and contains no hardcoded alternate Z domain', () => {
     const codeOnly = getControlsCodeOnly();
+
+    // 1. Config preload
+    assert.match(codeOnly, /const\s+Config\s*=\s*preload\s*\(\s*"res:\/\/scripts\/presentation\/demo_world_config\.gd"\s*\)/);
+
+    // 2. Canonical boundary references
+    assert.match(codeOnly, /Config\.Z_MIN/);
+    assert.match(codeOnly, /Config\.Z_MAX/);
+
+    // 3. No direct literal comparison against -1 or 2 in boundary expressions
+    assert.doesNotMatch(codeOnly, /z\s*<=\s*-1/);
+    assert.doesNotMatch(codeOnly, /z\s*>=\s*2/);
+
+    // 4. No alternate domain or ranges
     assert.doesNotMatch(codeOnly, /\[0,\s*2\]/);
     assert.doesNotMatch(codeOnly, /range\(0,\s*3\)/);
     assert.match(codeOnly, /world_view/);
@@ -399,7 +412,12 @@ describe('DEMO-01-C / C-05: Presentation Controls', () => {
   });
 
   // --- C05-15: lock resolves on response/disconnect/bridge_failed, no timeout ---
-  it('C05-15: Lock resolves strictly on response, disconnect, or bridge failure (no timeouts)', () => {
+  it('C05-15: Lock resolves strictly on response, disconnect, or bridge failure (no timeouts, safe under single-connection FIFO)', () => {
+    // Under C-05 single-connection architecture:
+    // 1. C-05 allows only one UI command in flight.
+    // 2. IpcServer executes commands serially.
+    // 3. Responses are dispatched over the ordered TCP stream.
+    // 4. Therefore a response received while the C-05 lock is active corresponds to the outstanding C-05 command under the current single-connection contract.
     const harness = new TestPresentationControlsHarness();
     harness.bridgeState = 'CONNECTED';
     harness.refreshUIState();
