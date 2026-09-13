@@ -91,6 +91,26 @@ export function buildPresentationSnapshot({
     const etaCurrent = org.developmental_state.eta_current;
     const developmentalProgress = org.developmental_state.developmental_progress || 0.0;
 
+    // TIER A — Authoritative Visual Phenotype (direct 1:1 projection, zero synthetic biology)
+    const phenotype = org.genetics?.phenotype;
+    if (!phenotype || typeof phenotype !== 'object') {
+      throw new TypeError(`[buildPresentationSnapshot] Missing authoritative phenotype for organism '${organismId}'`);
+    }
+    const bodyScaleIndex = phenotype.body_scale_index;
+    const cuticlePigmentRatio = phenotype.cuticle_pigment_ratio;
+    const cephalicHornScale = phenotype.cephalic_horn_scale;
+    const thoracicHornScale = phenotype.thoracic_horn_scale;
+    const tarsalGripIndex = phenotype.tarsal_grip_index;
+    if (
+      typeof bodyScaleIndex !== 'number' || !Number.isFinite(bodyScaleIndex) ||
+      typeof cuticlePigmentRatio !== 'number' || !Number.isFinite(cuticlePigmentRatio) ||
+      typeof cephalicHornScale !== 'number' || !Number.isFinite(cephalicHornScale) ||
+      typeof thoracicHornScale !== 'number' || !Number.isFinite(thoracicHornScale) ||
+      typeof tarsalGripIndex !== 'number' || !Number.isFinite(tarsalGripIndex)
+    ) {
+      throw new TypeError(`[buildPresentationSnapshot] Invalid or incomplete phenotype fields for organism '${organismId}'`);
+    }
+
     // TIER A — Authoritative Spatial Position (sole authority: SpatialWorld)
     const entityRecord = spatialWorld.getEntity(organismId);
     const position = entityRecord
@@ -152,7 +172,12 @@ export function buildPresentationSnapshot({
       micro_climate: microClimate,
       resource_zone_ids: resourceZoneIds,
       action_display_label: actionDisplayLabel,
-      stage_display_label: stageDisplayLabel
+      stage_display_label: stageDisplayLabel,
+      body_scale_index: bodyScaleIndex,
+      cuticle_pigment_ratio: cuticlePigmentRatio,
+      cephalic_horn_scale: cephalicHornScale,
+      thoracic_horn_scale: thoracicHornScale,
+      tarsal_grip_index: tarsalGripIndex
     };
   });
 

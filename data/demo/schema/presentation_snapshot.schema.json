@@ -88,7 +88,12 @@
           "micro_climate",
           "resource_zone_ids",
           "action_display_label",
-          "stage_display_label"
+          "stage_display_label",
+          "body_scale_index",
+          "cuticle_pigment_ratio",
+          "cephalic_horn_scale",
+          "thoracic_horn_scale",
+          "tarsal_grip_index"
         ],
         "properties": {
           "organism_id": {
@@ -200,6 +205,31 @@
           },
           "stage_display_label": {
             "type": "string"
+          },
+          "body_scale_index": {
+            "type": "number",
+            "minimum": 0.42,
+            "maximum": 1.5
+          },
+          "cuticle_pigment_ratio": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "cephalic_horn_scale": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2.25
+          },
+          "thoracic_horn_scale": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1.8
+          },
+          "tarsal_grip_index": {
+            "type": "number",
+            "minimum": 0.8,
+            "maximum": 2.5
           }
         },
         "additionalProperties": false
