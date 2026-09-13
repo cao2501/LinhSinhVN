@@ -11,3 +11,4 @@ export * from './spatial_entity_registry.js';
 export * from './spatial_world.js';
 export * from './locomotion/index.js';
 export * from './habitat/index.js';
+export * from './micro_climate/index.js';
