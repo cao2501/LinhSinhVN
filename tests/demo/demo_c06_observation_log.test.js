@@ -19,6 +19,7 @@ class ObservationLogModel {
     this.maxEntries = options.maxEntries || 100;
     this.lastDiffedTick = -1;
     this.previousSnapshotMap = new Map();
+    this.previousCensus = null;
     this.sessionEpoch = 0;
     this.sequenceId = 0;
     this.observationRing = [];
@@ -112,6 +113,7 @@ class ObservationLogModel {
     this.sessionEpoch += 1;
     this.lastDiffedTick = tick;
     this.previousSnapshotMap.clear();
+    this.previousCensus = null;
     this.observationRing = []; // presentation UI cleanup
 
     // Append exactly one SIMULATION_RESET (sequence_id preserved and incremented)
@@ -149,6 +151,13 @@ class ObservationLogModel {
     }
 
     this.previousSnapshotMap = currentMap;
+
+    // Seed reset baseline census (do NOT emit CENSUS_UPDATED)
+    if (snapshot.census && typeof snapshot.census === 'object') {
+      this.previousCensus = { ...snapshot.census };
+    } else {
+      this.previousCensus = null;
+    }
   }
 
   _processNewerSnapshot(snapshot, tick) {
@@ -170,6 +179,11 @@ class ObservationLogModel {
           summary: `Organism ${id} appeared in presentation snapshot as ${org.current_stage_id} at (${org.pos_x}, ${org.pos_y}, ${org.pos_z})`,
           details: { stage_id: org.current_stage_id, pos: { x: org.pos_x, y: org.pos_y, z: org.pos_z } }
         });
+      }
+
+      // Establish census baseline on first snapshot (do NOT emit CENSUS_UPDATED)
+      if (snapshot.census && typeof snapshot.census === 'object') {
+        this.previousCensus = { ...snapshot.census };
       }
     } else {
       const allIdsSet = new Set([...this.previousSnapshotMap.keys(), ...currentMap.keys()]);
@@ -227,6 +241,38 @@ class ObservationLogModel {
             });
           }
         }
+      }
+
+      // Census change check
+      if (snapshot.census && typeof snapshot.census === 'object') {
+        const currentCensus = { ...snapshot.census };
+        if (this.previousCensus !== null) {
+          const prevAlive = Number(this.previousCensus.alive_count ?? 0);
+          const currAlive = Number(currentCensus.alive_count ?? 0);
+          const prevDead = Number(this.previousCensus.dead_count ?? 0);
+          const currDead = Number(currentCensus.dead_count ?? 0);
+          const prevTotal = Number(this.previousCensus.total_count ?? 0);
+          const currTotal = Number(currentCensus.total_count ?? 0);
+
+          if (prevAlive !== currAlive || prevDead !== currDead || prevTotal !== currTotal) {
+            candidateBatch.push({
+              category: 'SIMULATION',
+              type: 'CENSUS_UPDATED',
+              simulation_tick: tick,
+              entity_id: 'system',
+              summary: `Census updated at tick ${tick}: ${currAlive} alive, ${currDead} dead, ${currTotal} total`,
+              details: {
+                alive_count: currAlive,
+                dead_count: currDead,
+                total_count: currTotal,
+                prev_alive_count: prevAlive,
+                prev_dead_count: prevDead,
+                prev_total_count: prevTotal
+              }
+            });
+          }
+        }
+        this.previousCensus = currentCensus;
       }
     }
 
@@ -633,14 +679,17 @@ test('C06-15: Deterministic Batch Ordering', () => {
   // Rank 1: ORGANISM_APPEARED (org_c)
   // Rank 2: STAGE_TRANSITION (org_b)
   // Rank 4: ORGANISM_DIED (org_a)
+  // Rank 5: CENSUS_UPDATED (system)
   const obs = log.getObservations().filter(o => o.simulation_tick === 2);
-  assert.equal(obs.length, 3);
+  assert.equal(obs.length, 4);
   assert.equal(obs[0].type, 'ORGANISM_APPEARED');
   assert.equal(obs[0].entity_id, 'org_c');
   assert.equal(obs[1].type, 'STAGE_TRANSITION');
   assert.equal(obs[1].entity_id, 'org_b');
   assert.equal(obs[2].type, 'ORGANISM_DIED');
   assert.equal(obs[2].entity_id, 'org_a');
+  assert.equal(obs[3].type, 'CENSUS_UPDATED');
+  assert.equal(obs[3].entity_id, 'system');
 });
 
 test('C06-16: Global Sequence Monotonicity', () => {
@@ -1042,4 +1091,224 @@ test('C06-32: Tick-0 Non-Reset Preservation', () => {
   assert.equal(log.getLastDiffedTick(), tickBefore);
   assert.equal(log.getObservationCount(), obsCountBefore);
   assert.equal(log.getObservations().some(o => o.type === 'SIMULATION_RESET'), false);
+});
+
+
+// ==========================================
+// C-06 PATCH-01: CENSUS_UPDATED TESTS (C06-33 through C06-38)
+// ==========================================
+
+test('C06-33: Census Baseline Initialization', () => {
+  const log = new ObservationLogModel();
+  const orgA = makeSampleOrg('org_0');
+
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'getSnapshot',
+    result: {
+      snapshot: {
+        ...makeSnapshot(0, [orgA]),
+        census: { alive_count: 1, dead_count: 0, total_count: 1 }
+      }
+    }
+  });
+
+  const obs = log.getObservations();
+  const censusObs = obs.filter(o => o.type === 'CENSUS_UPDATED');
+  assert.equal(censusObs.length, 0, 'First snapshot must seed census baseline without emitting CENSUS_UPDATED');
+});
+
+test('C06-34: Census Change Detection', () => {
+  const log = new ObservationLogModel();
+  const orgA = makeSampleOrg('org_0');
+
+  // Baseline
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'step',
+    result: {
+      snapshot: {
+        ...makeSnapshot(1, [orgA]),
+        census: { alive_count: 1, dead_count: 0, total_count: 1 }
+      }
+    }
+  });
+
+  // Census change at tick 2
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'step',
+    result: {
+      snapshot: {
+        ...makeSnapshot(2, [orgA]),
+        census: { alive_count: 2, dead_count: 0, total_count: 2 }
+      }
+    }
+  });
+
+  const obs = log.getObservations();
+  const censusObs = obs.filter(o => o.type === 'CENSUS_UPDATED');
+  assert.equal(censusObs.length, 1, 'Changed authoritative census must produce exactly one CENSUS_UPDATED');
+  assert.equal(censusObs[0].simulation_tick, 2);
+  assert.equal(censusObs[0].entity_id, 'system');
+  assert.equal(censusObs[0].details.alive_count, 2);
+  assert.equal(censusObs[0].details.prev_alive_count, 1);
+});
+
+test('C06-35: Census Unchanged', () => {
+  const log = new ObservationLogModel();
+  const orgA = makeSampleOrg('org_0');
+
+  // Baseline
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'step',
+    result: {
+      snapshot: {
+        ...makeSnapshot(1, [orgA]),
+        census: { alive_count: 1, dead_count: 0, total_count: 1 }
+      }
+    }
+  });
+
+  // Identical census at tick 2
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'step',
+    result: {
+      snapshot: {
+        ...makeSnapshot(2, [orgA]),
+        census: { alive_count: 1, dead_count: 0, total_count: 1 }
+      }
+    }
+  });
+
+  const obs = log.getObservations();
+  const censusObs = obs.filter(o => o.type === 'CENSUS_UPDATED');
+  assert.equal(censusObs.length, 0, 'Identical census must produce zero CENSUS_UPDATED');
+});
+
+test('C06-36: Census Cross-Reset Isolation', () => {
+  const log = new ObservationLogModel();
+  const orgA = makeSampleOrg('org_0');
+
+  // Epoch 0 baseline & step with large census
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'step',
+    result: {
+      snapshot: {
+        ...makeSnapshot(1, [orgA]),
+        census: { alive_count: 10, dead_count: 0, total_count: 10 }
+      }
+    }
+  });
+
+  // Authoritative reset arrives with post-reset snapshot census (2 alive)
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'reset',
+    result: {
+      snapshot: {
+        ...makeSnapshot(0, [orgA]),
+        census: { alive_count: 2, dead_count: 0, total_count: 2 }
+      }
+    }
+  });
+
+  // Reset MUST NOT emit CENSUS_UPDATED
+  const resetObs = log.getObservations();
+  assert.equal(resetObs.filter(o => o.type === 'CENSUS_UPDATED').length, 0, 'Reset must not emit CENSUS_UPDATED');
+
+  // Epoch 1 step 1 arrives with identical post-reset census (2 alive)
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'step',
+    result: {
+      snapshot: {
+        ...makeSnapshot(1, [orgA]),
+        census: { alive_count: 2, dead_count: 0, total_count: 2 }
+      }
+    }
+  });
+
+  // Invariant: Epoch 0 census (10) was cleared and NEVER compared with Epoch 1 census (2). Zero CENSUS_UPDATED!
+  const epoch1CensusObs = log.getObservations().filter(o => o.session_epoch === 1 && o.type === 'CENSUS_UPDATED');
+  assert.equal(epoch1CensusObs.length, 0, 'Must not emit phantom CENSUS_UPDATED across reset boundary');
+});
+
+test('C06-37: Census Ordering', () => {
+  const log = new ObservationLogModel();
+  const orgAlive = makeSampleOrg('org_0', 'STAGE_ADULT', 'FORAGE', true);
+
+  // Baseline tick 1
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'step',
+    result: {
+      snapshot: {
+        ...makeSnapshot(1, [orgAlive]),
+        census: { alive_count: 1, dead_count: 0, total_count: 1 }
+      }
+    }
+  });
+
+  // Tick 2: org_0 dies, AND census changes (alive: 0, dead: 1)
+  const orgDead = makeSampleOrg('org_0', 'STAGE_ADULT', 'NONE', false);
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'step',
+    result: {
+      snapshot: {
+        ...makeSnapshot(2, [orgDead]),
+        census: { alive_count: 0, dead_count: 1, total_count: 1 }
+      }
+    }
+  });
+
+  const obs = log.getObservations();
+  const tick2Obs = obs.filter(o => o.simulation_tick === 2);
+  const deathIdx = tick2Obs.findIndex(o => o.type === 'ORGANISM_DIED');
+  const censusIdx = tick2Obs.findIndex(o => o.type === 'CENSUS_UPDATED');
+
+  assert.ok(deathIdx !== -1, 'ORGANISM_DIED must be present');
+  assert.ok(censusIdx !== -1, 'CENSUS_UPDATED must be present');
+  assert.ok(deathIdx < censusIdx, 'CENSUS_UPDATED (rank 5) must be ordered after ORGANISM_DIED (rank 4)');
+});
+
+test('C06-38: Census Sequence ID', () => {
+  const log = new ObservationLogModel();
+  const orgA = makeSampleOrg('org_0');
+
+  // Step 1 baseline
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'step',
+    result: {
+      snapshot: {
+        ...makeSnapshot(1, [orgA]),
+        census: { alive_count: 1, dead_count: 0, total_count: 1 }
+      }
+    }
+  });
+
+  const seqBefore = log.getSequenceId();
+
+  // Step 2: census update only
+  log.onIpcResponseReceived({
+    success: true,
+    command: 'step',
+    result: {
+      snapshot: {
+        ...makeSnapshot(2, [orgA]),
+        census: { alive_count: 5, dead_count: 0, total_count: 5 }
+      }
+    }
+  });
+
+  const obs = log.getObservations();
+  const censusObs = obs.find(o => o.type === 'CENSUS_UPDATED');
+  assert.ok(censusObs);
+  assert.equal(censusObs.sequence_id, seqBefore + 1, 'CENSUS_UPDATED must consume exactly one global sequence ID');
+  assert.equal(log.getSequenceId(), seqBefore + 1);
 });

@@ -47,6 +47,7 @@ const TYPE_RANKS: Dictionary = {
 # Presentation-local observer state
 var _last_diffed_tick: int = -1
 var _previous_snapshot_map: Dictionary = {}
+var _previous_census: Dictionary = {}
 var _session_epoch: int = 0
 var _sequence_id: int = 0
 var _observation_ring: Array = []
@@ -92,6 +93,9 @@ func get_observation_count() -> int:
 
 func get_observations() -> Array:
 	return _observation_ring.duplicate(true)
+
+func get_previous_census() -> Dictionary:
+	return _previous_census.duplicate(true)
 
 func clear_log() -> void:
 	_observation_ring.clear()
@@ -171,6 +175,7 @@ func _process_reset_snapshot(snapshot: Dictionary, tick: int) -> void:
 	_session_epoch += 1
 	_last_diffed_tick = tick
 	_previous_snapshot_map.clear()
+	_previous_census.clear()
 
 	# Presentation UI visual cleanup on reset
 	_observation_ring.clear()
@@ -224,6 +229,13 @@ func _process_reset_snapshot(snapshot: Dictionary, tick: int) -> void:
 
 		_previous_snapshot_map = current_map
 
+	# Seed reset baseline census (do NOT emit CENSUS_UPDATED merely because reset occurred)
+	var census_var: Variant = snapshot.get("census", null)
+	if typeof(census_var) == TYPE_DICTIONARY:
+		_previous_census = (census_var as Dictionary).duplicate(true)
+	else:
+		_previous_census.clear()
+
 func _process_newer_snapshot(snapshot: Dictionary, tick: int) -> void:
 	var organisms_var: Variant = snapshot.get("organisms", [])
 	if typeof(organisms_var) != TYPE_ARRAY:
@@ -257,6 +269,11 @@ func _process_newer_snapshot(snapshot: Dictionary, tick: int) -> void:
 					"pos": {"x": int(org.get("pos_x", 0)), "y": int(org.get("pos_y", 0)), "z": int(org.get("pos_z", 0))}
 				}
 			})
+
+		# Establish census baseline on first snapshot (do NOT emit CENSUS_UPDATED)
+		var census_var: Variant = snapshot.get("census", null)
+		if typeof(census_var) == TYPE_DICTIONARY:
+			_previous_census = (census_var as Dictionary).duplicate(true)
 	else:
 		# Subsequent snapshot diff
 		var current_ids: Array = current_map.keys()
@@ -336,6 +353,41 @@ func _process_newer_snapshot(snapshot: Dictionary, tick: int) -> void:
 						"summary": "Organism %s died at tick %d" % [id_str, tick],
 						"details": {"tick": tick}
 					})
+
+		# 4. Census change check
+		var census_var: Variant = snapshot.get("census", null)
+		if typeof(census_var) == TYPE_DICTIONARY:
+			var current_census: Dictionary = (census_var as Dictionary).duplicate(true)
+			if not _previous_census.is_empty():
+				var c_prev_alive: int = int(_previous_census.get("alive_count", 0))
+				var c_curr_alive: int = int(current_census.get("alive_count", 0))
+				var c_prev_dead: int = int(_previous_census.get("dead_count", 0))
+				var c_curr_dead: int = int(current_census.get("dead_count", 0))
+				var c_prev_total: int = int(_previous_census.get("total_count", 0))
+				var c_curr_total: int = int(current_census.get("total_count", 0))
+
+				if c_prev_alive != c_curr_alive or c_prev_dead != c_curr_dead or c_prev_total != c_curr_total:
+					candidate_batch.append({
+						"category": "SIMULATION",
+						"type": "CENSUS_UPDATED",
+						"simulation_tick": tick,
+						"entity_id": "system",
+						"summary": "Census updated at tick %d: %d alive, %d dead, %d total" % [
+							tick,
+							c_curr_alive,
+							c_curr_dead,
+							c_curr_total
+						],
+						"details": {
+							"alive_count": c_curr_alive,
+							"dead_count": c_curr_dead,
+							"total_count": c_curr_total,
+							"prev_alive_count": c_prev_alive,
+							"prev_dead_count": c_prev_dead,
+							"prev_total_count": c_prev_total
+						}
+					})
+			_previous_census = current_census
 
 	# Deterministic batch sort
 	_sort_observation_batch(candidate_batch)
