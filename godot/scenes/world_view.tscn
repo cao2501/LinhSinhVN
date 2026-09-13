@@ -8,6 +8,7 @@
 [ext_resource type="Script" path="res://scripts/presentation/snapshot_synchronizer.gd" id="6_snapshot_synchronizer"]
 [ext_resource type="Script" path="res://scripts/presentation/presentation_controls.gd" id="7_presentation_controls"]
 [ext_resource type="Script" path="res://scripts/presentation/observation_log.gd" id="8_observation_log"]
+[ext_resource type="Script" path="res://scripts/presentation/observation_log_ui.gd" id="9_observation_log_ui"]
 
 [node name="WorldView" type="Node2D"]
 script = ExtResource("1_world_view")
@@ -145,6 +146,10 @@ text = "Observation Log"
 layout_mode = 2
 text = "Clear"
 
+[node name="EmptyStateLabel" type="Label" parent="UI/ObservationLog/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "No observations recorded"
+
 [node name="ScrollContainer" type="ScrollContainer" parent="UI/ObservationLog/MarginContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
@@ -152,5 +157,8 @@ size_flags_vertical = 3
 [node name="LogList" type="VBoxContainer" parent="UI/ObservationLog/MarginContainer/VBoxContainer/ScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="ObservationLogUI" type="Node" parent="UI/ObservationLog"]
+script = ExtResource("9_observation_log_ui")
 
 [connection signal="z_layer_changed" from="." to="OrganismsOverlay" method="set_active_z_layer"]
