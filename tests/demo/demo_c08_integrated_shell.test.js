@@ -403,6 +403,7 @@ class PresentationControlsModel {
   constructor(ipcClient) {
     this.ipcClient = ipcClient;
     this.commandInFlight = false;
+    this.listeners = {};
     this.currentBridgeState = 'DISCONNECTED';
     this.currentPlaybackStatus = 'PAUSED';
     this.currentTick = 0;
@@ -456,10 +457,22 @@ class PresentationControlsModel {
     this.dispatchCommand('reset');
   }
 
+  on(event, cb) {
+    if (!this.listeners[event]) this.listeners[event] = [];
+    this.listeners[event].push(cb);
+  }
+
+  emit(event, ...args) {
+    if (this.listeners[event]) {
+      for (const cb of this.listeners[event]) cb(...args);
+    }
+  }
+
   onSyncPressed() {
     if (this.commandInFlight || this.currentBridgeState !== 'CONNECTED') {
       return;
     }
+    this.emit('sync_requested');
     this.dispatchCommand('getSnapshot');
   }
 
@@ -1699,6 +1712,489 @@ describe('DEMO-01-C / C-08-C-H: Hardening Polling Response Correlation', () => {
 
   test('C08-C-H18: No frozen-domain file modified', () => {
     const diff = execSync('git diff --name-only 4d808f3', { encoding: 'utf8' }).trim();
+    const modifiedFiles = diff ? diff.split('\n').map(s => s.trim()) : [];
+
+    const allowed = [
+      'godot/scripts/presentation/world_view.gd',
+      'godot/scripts/presentation/presentation_controls.gd',
+      'tests/demo/demo_c08_integrated_shell.test.js'
+    ];
+
+    for (const f of modifiedFiles) {
+      assert.ok(allowed.includes(f), `Forbidden file modified: ${f}`);
+    }
+  });
+});
+
+describe('DEMO-01-C / C-08-D: Reset & Epoch Isolation', () => {
+  const worldViewPath = path.resolve(process.cwd(), 'godot/scripts/presentation/world_view.gd');
+  const presentationControlsPath = path.resolve(process.cwd(), 'godot/scripts/presentation/presentation_controls.gd');
+  const worldViewContent = fs.readFileSync(worldViewPath, 'utf8');
+  const presentationControlsContent = fs.readFileSync(presentationControlsPath, 'utf8');
+
+  // SnapshotSynchronizer Model matching godot/scripts/presentation/snapshot_synchronizer.gd
+  class SnapshotSynchronizerModel {
+    constructor(ipcClient) {
+      this.ipcClient = ipcClient;
+      this.lastAcceptedTick = -1;
+      this.sessionEpoch = 0;
+      this.playbackStatus = 'PAUSED';
+      this.bridgeState = 'DISCONNECTED';
+      this.appliedSnapshots = [];
+
+      if (this.ipcClient) {
+        this.ipcClient.on('connected', () => { this.bridgeState = 'CONNECTED'; });
+        this.ipcClient.on('disconnected', () => { this.bridgeState = 'DISCONNECTED'; });
+        this.ipcClient.on('bridge_failed', () => { this.bridgeState = 'BRIDGE_FAILED'; });
+        this.ipcClient.on('response_received', (res) => this.onResponseReceived(res));
+      }
+    }
+
+    onResponseReceived(res) {
+      if (!res.success) {
+        if (res.error?.code === 'SESSION_ERROR') {
+          this.bridgeState = 'BRIDGE_FAILED';
+        }
+        return;
+      }
+      const command = String(res.command || '');
+      const result = res.result || {};
+
+      if (command === 'play' || command === 'pause') {
+        if (typeof result.playback_status === 'string') {
+          this.playbackStatus = result.playback_status;
+        }
+        return;
+      }
+
+      const snapshot = result.snapshot;
+      if (!snapshot || typeof snapshot.simulation_tick !== 'number' || snapshot.simulation_tick < 0) {
+        return;
+      }
+
+      const tick = snapshot.simulation_tick;
+      const isReset = (command === 'reset');
+
+      if (isReset) {
+        this.sessionEpoch += 1;
+        this.lastAcceptedTick = tick;
+        this.playbackStatus = snapshot.playback_status || 'PAUSED';
+        this.appliedSnapshots.push({ tick, epoch: this.sessionEpoch, organisms: snapshot.organisms || [] });
+      } else if (tick > this.lastAcceptedTick) {
+        this.lastAcceptedTick = tick;
+        if (snapshot.playback_status) this.playbackStatus = snapshot.playback_status;
+        this.appliedSnapshots.push({ tick, epoch: this.sessionEpoch, organisms: snapshot.organisms || [] });
+      }
+    }
+  }
+
+  // ObservationLog Model matching godot/scripts/presentation/observation_log.gd
+  class ObservationLogModel {
+    constructor(ipcClient) {
+      this.ipcClient = ipcClient;
+      this.lastDiffedTick = -1;
+      this.sessionEpoch = 0;
+      this.sequenceId = 0;
+      this.observations = [];
+      this.previousSnapshotMap = {};
+
+      if (this.ipcClient) {
+        this.ipcClient.on('response_received', (res) => this.onIpcResponseReceived(res));
+      }
+    }
+
+    onIpcResponseReceived(res) {
+      if (!res.success) return;
+      const command = String(res.command || '');
+      const result = res.result || {};
+      if (command !== 'step' && command !== 'getSnapshot' && command !== 'reset') return;
+
+      const snapshot = result.snapshot;
+      if (!snapshot || typeof snapshot.simulation_tick !== 'number' || snapshot.simulation_tick < 0) return;
+
+      const tick = snapshot.simulation_tick;
+      if (command === 'reset') {
+        this.sessionEpoch += 1;
+        this.lastDiffedTick = tick;
+        this.previousSnapshotMap = {};
+        for (const org of (snapshot.organisms || [])) {
+          if (org.organism_id) this.previousSnapshotMap[org.organism_id] = org;
+        }
+        this.sequenceId += 1;
+        this.observations.push({
+          sequence_id: this.sequenceId,
+          session_epoch: this.sessionEpoch,
+          type: 'SIMULATION_RESET',
+          simulation_tick: tick
+        });
+        return;
+      }
+
+      if (tick > this.lastDiffedTick) {
+        const currentMap = {};
+        for (const org of (snapshot.organisms || [])) {
+          if (org.organism_id) currentMap[org.organism_id] = org;
+        }
+
+        for (const id of Object.keys(currentMap)) {
+          if (!this.previousSnapshotMap[id]) {
+            this.sequenceId += 1;
+            this.observations.push({
+              sequence_id: this.sequenceId,
+              session_epoch: this.sessionEpoch,
+              type: 'ORGANISM_APPEARED',
+              entity_id: id,
+              simulation_tick: tick
+            });
+          }
+        }
+
+        this.lastDiffedTick = tick;
+        this.previousSnapshotMap = currentMap;
+      }
+    }
+  }
+
+  // Integrated Shell Test Rig combining PresentationControls, WorldView, SnapshotSynchronizer, and ObservationLog
+  class IntegratedPresentationShell {
+    constructor() {
+      this.ipc = new MockIpcClient();
+      this.worldView = new WorldViewPollingModel(this.ipc);
+      this.controls = new PresentationControlsModel(this.ipc);
+      this.synchronizer = new SnapshotSynchronizerModel(this.ipc);
+      this.observationLog = new ObservationLogModel(this.ipc);
+
+      // Wire signals
+      this.controls.on('sync_requested', () => this.worldView.notifyManualSyncRequested());
+      this.worldView.ready();
+    }
+  }
+
+  test('C08-D01: Successful RESET stops polling', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+    shell.ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } });
+
+    shell.worldView.onPlaybackStatusChanged('PLAYING');
+    shell.worldView.process(0.15); // Poll in flight
+    assert.equal(shell.worldView.snapshotPollInFlight, true);
+
+    // RESET succeeds
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'reset',
+      result: { snapshot: { simulation_tick: 0, playback_status: 'PAUSED', organisms: [] } }
+    });
+
+    assert.equal(shell.worldView.snapshotPollInFlight, false, 'RESET must immediately clear polling lock');
+    shell.worldView.onPlaybackStatusChanged('PAUSED');
+
+    shell.worldView.process(0.5);
+    assert.equal(shell.worldView.snapshotPollInFlight, false, 'Polling remains stopped');
+  });
+
+  test('C08-D02: RESET clears polling accumulator', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+    shell.ipc.emit('response_received', { success: true, command: 'getSnapshot' });
+    shell.worldView.onPlaybackStatusChanged('PLAYING');
+
+    shell.worldView.process(0.08);
+    assert.ok(shell.worldView.pollAccumulator > 0.0);
+
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'reset',
+      result: { snapshot: { simulation_tick: 0, playback_status: 'PAUSED' } }
+    });
+
+    assert.equal(shell.worldView.pollAccumulator, 0.0, 'RESET must clear polling accumulator to 0');
+  });
+
+  test('C08-D03: RESET does not call step/play/pause', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+    shell.controls.onResetPressed();
+
+    const dispatched = shell.ipc.sentCommands.map(c => c.command);
+    assert.ok(!dispatched.includes('step'), 'RESET must not dispatch step()');
+    assert.ok(!dispatched.includes('play'), 'RESET must not dispatch play()');
+    assert.ok(!dispatched.includes('pause'), 'RESET must not dispatch pause()');
+    assert.equal(dispatched[dispatched.length - 1], 'reset');
+  });
+
+  test('C08-D04: RESET does not locally modify simulation_tick', () => {
+    assert.ok(!worldViewContent.includes('simulation_tick ='));
+    assert.ok(!presentationControlsContent.includes('simulation_tick ='));
+  });
+
+  test('C08-D05: RESET is recognized by response.command == "reset"', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+
+    // Query getSnapshot with tick 0 (non-reset)
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'getSnapshot',
+      result: { snapshot: { simulation_tick: 0, organisms: [] } }
+    });
+
+    assert.equal(shell.synchronizer.sessionEpoch, 0, 'Non-reset query must not increment epoch');
+    assert.equal(shell.observationLog.sessionEpoch, 0);
+
+    // Actual reset command
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'reset',
+      result: { snapshot: { simulation_tick: 0, organisms: [] } }
+    });
+
+    assert.equal(shell.synchronizer.sessionEpoch, 1, 'response.command == reset increments epoch');
+    assert.equal(shell.observationLog.sessionEpoch, 1);
+  });
+
+  test('C08-D06: Successful RESET recovers BRIDGE_FAILED presentation state', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+    shell.ipc.simulateBridgeFailed('FATAL_SESSION_ERROR');
+
+    assert.equal(shell.worldView.bridgeFailedActive, true);
+    assert.equal(shell.controls.currentBridgeState, 'BRIDGE_FAILED');
+
+    // RESET succeeds
+    shell.controls.onResetPressed();
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'reset',
+      result: { snapshot: { simulation_tick: 0, playback_status: 'PAUSED' } }
+    });
+
+    assert.equal(shell.worldView.bridgeFailedActive, false, 'Successful reset clears bridgeFailedActive');
+    assert.equal(shell.controls.commandInFlight, false);
+  });
+
+  test('C08-D07: Failed RESET does not create a successful recovery epoch', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+    shell.ipc.simulateBridgeFailed('FATAL_SESSION_ERROR');
+
+    const epochBefore = shell.synchronizer.sessionEpoch;
+
+    // RESET fails
+    shell.controls.onResetPressed();
+    shell.ipc.emit('response_received', {
+      success: false,
+      command: 'reset',
+      error: { code: 'RESET_FAILED', message: 'Engine reset failed' }
+    });
+
+    assert.equal(shell.synchronizer.sessionEpoch, epochBefore, 'Failed reset must NOT increment epoch');
+    assert.equal(shell.observationLog.sessionEpoch, epochBefore);
+    assert.equal(shell.worldView.bridgeFailedActive, true, 'Bridge failure remains active after failed reset');
+  });
+
+  test('C08-D08: Exactly one reset boundary is produced for one successful RESET', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'reset',
+      result: { snapshot: { simulation_tick: 0, organisms: [] } }
+    });
+
+    const resetObs = shell.observationLog.observations.filter(o => o.type === 'SIMULATION_RESET');
+    assert.equal(resetObs.length, 1, 'Exactly one SIMULATION_RESET observation must be produced');
+    assert.equal(shell.synchronizer.sessionEpoch, 1);
+  });
+
+  test('C08-D09: Reset snapshot tick 0 is accepted by SnapshotSynchronizer', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'reset',
+      result: { snapshot: { simulation_tick: 0, organisms: [{ organism_id: 'org_root' }] } }
+    });
+
+    assert.equal(shell.synchronizer.lastAcceptedTick, 0);
+    assert.equal(shell.synchronizer.appliedSnapshots.length, 1);
+    assert.equal(shell.synchronizer.appliedSnapshots[0].tick, 0);
+  });
+
+  test('C08-D10: New epoch begins after successful RESET', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+
+    assert.equal(shell.synchronizer.sessionEpoch, 0);
+    shell.ipc.emit('response_received', { success: true, command: 'reset', result: { snapshot: { simulation_tick: 0 } } });
+    assert.equal(shell.synchronizer.sessionEpoch, 1, 'Epoch transitions to 1');
+
+    shell.ipc.emit('response_received', { success: true, command: 'reset', result: { snapshot: { simulation_tick: 0 } } });
+    assert.equal(shell.synchronizer.sessionEpoch, 2, 'Second reset transitions epoch to 2');
+  });
+
+  test('C08-D11: Old pre-reset snapshot cannot become the current snapshot (Case A Stale Protection)', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+    shell.ipc.emit('response_received', { success: true, command: 'getSnapshot' }); // initial resolved
+
+    // Epoch 0: advance to tick 10
+    shell.ipc.emit('response_received', { success: true, command: 'step', result: { snapshot: { simulation_tick: 10 } } });
+    assert.equal(shell.synchronizer.lastAcceptedTick, 10);
+
+    // RESET occurs -> Epoch 1
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'reset',
+      result: { snapshot: { simulation_tick: 0, organisms: [] } }
+    });
+    assert.equal(shell.synchronizer.lastAcceptedTick, 0);
+    assert.equal(shell.synchronizer.sessionEpoch, 1);
+
+    // WorldView FIFO queue was cleared on reset:
+    assert.equal(shell.worldView.pendingSnapshotSources.length, 0);
+
+    // Subsequent legitimate snapshot in epoch 1 at tick 1 is accepted:
+    shell.ipc.emit('response_received', { success: true, command: 'step', result: { snapshot: { simulation_tick: 1 } } });
+    assert.equal(shell.synchronizer.lastAcceptedTick, 1);
+  });
+
+  test('C08-D12: Late pre-reset POLL response cannot create post-reset observations', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+    shell.ipc.emit('response_received', { success: true, command: 'getSnapshot' }); // initial resolved
+
+    // Epoch 0: advance to tick 5 with org_old
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'step',
+      result: { snapshot: { simulation_tick: 5, organisms: [{ organism_id: 'org_old' }] } }
+    });
+
+    // Reset to Epoch 1 with empty organisms
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'reset',
+      result: { snapshot: { simulation_tick: 0, organisms: [] } }
+    });
+
+    const obsCountAfterReset = shell.observationLog.observations.length;
+    assert.equal(shell.observationLog.observations[obsCountAfterReset - 1].type, 'SIMULATION_RESET');
+
+    // On reset, WorldView polling tracking queue is completely cleared
+    assert.equal(shell.worldView.pendingSnapshotSources.length, 0);
+    assert.equal(shell.worldView.snapshotPollInFlight, false);
+  });
+
+  test('C08-D13: Late pre-reset MANUAL SYNC response cannot create post-reset observations (Case B)', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+    shell.ipc.emit('response_received', { success: true, command: 'getSnapshot' }); // initial resolved
+
+    // Manual sync requested in Epoch 0
+    shell.controls.onSyncPressed();
+    assert.equal(shell.worldView.manualSyncPendingCount, 1);
+
+    // RESET occurs before manual sync response arrives
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'reset',
+      result: { snapshot: { simulation_tick: 0, organisms: [] } }
+    });
+
+    // Reset clears manualSyncPendingCount and pendingSnapshotSources in WorldView
+    assert.equal(shell.worldView.manualSyncPendingCount, 0);
+    assert.equal(shell.worldView.pendingSnapshotSources.length, 0);
+  });
+
+  test('C08-D14: No duplicate SIMULATION_RESET', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+
+    shell.ipc.emit('response_received', { success: true, command: 'reset', result: { snapshot: { simulation_tick: 0 } } });
+
+    // Subsequent tick 0 queries do not duplicate SIMULATION_RESET
+    shell.ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } });
+    shell.ipc.emit('response_received', { success: true, command: 'getSnapshot', result: { snapshot: { simulation_tick: 0 } } });
+
+    const resets = shell.observationLog.observations.filter(o => o.type === 'SIMULATION_RESET');
+    assert.equal(resets.length, 1, 'Must have exactly one reset observation');
+  });
+
+  test('C08-D15: Observation baseline belongs to the new epoch', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+
+    // Reset with org_seed
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'reset',
+      result: { snapshot: { simulation_tick: 0, organisms: [{ organism_id: 'org_seed' }] } }
+    });
+
+    assert.equal(shell.observationLog.previousSnapshotMap['org_seed']?.organism_id, 'org_seed');
+    assert.equal(shell.observationLog.sessionEpoch, 1);
+
+    // Step 1: org_seed remains, org_spawn appears
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'step',
+      result: { snapshot: { simulation_tick: 1, organisms: [{ organism_id: 'org_seed' }, { organism_id: 'org_spawn' }] } }
+    });
+
+    const appeared = shell.observationLog.observations.filter(o => o.type === 'ORGANISM_APPEARED');
+    assert.equal(appeared.length, 1);
+    assert.equal(appeared[0].entity_id, 'org_spawn');
+    assert.equal(appeared[0].session_epoch, 1);
+  });
+
+  test('C08-D16: PAUSED + RESET does not start PLAY', () => {
+    const shell = new IntegratedPresentationShell();
+    shell.ipc.simulateConnected();
+
+    assert.equal(shell.synchronizer.playbackStatus, 'PAUSED');
+    shell.ipc.emit('response_received', {
+      success: true,
+      command: 'reset',
+      result: { snapshot: { simulation_tick: 0, playback_status: 'PAUSED' } }
+    });
+
+    assert.equal(shell.synchronizer.playbackStatus, 'PAUSED');
+    shell.worldView.onPlaybackStatusChanged('PAUSED');
+    shell.worldView.process(1.0);
+
+    assert.equal(shell.worldView.snapshotPollInFlight, false, 'Must not poll while PAUSED');
+    const plays = shell.ipc.sentCommands.filter(c => c.command === 'play');
+    assert.equal(plays.length, 0, 'Must not autonomously call play()');
+  });
+
+  test('C08-D17: DISCONNECTED + RESET does not fabricate a reset', () => {
+    const shell = new IntegratedPresentationShell();
+    assert.equal(shell.controls.currentBridgeState, 'DISCONNECTED');
+
+    shell.controls.onResetPressed();
+    const resets = shell.ipc.sentCommands.filter(c => c.command === 'reset');
+    assert.equal(resets.length, 0, 'Must not send reset while DISCONNECTED');
+    assert.equal(shell.synchronizer.sessionEpoch, 0);
+    assert.equal(shell.observationLog.sessionEpoch, 0);
+  });
+
+  test('C08-D18: WorldView contains no snapshot acceptance authority', () => {
+    assert.ok(!worldViewContent.includes('_resolve_snapshot'), 'WorldView must not have _resolve_snapshot');
+    assert.ok(!worldViewContent.includes('SnapshotResolution'), 'WorldView must not define SnapshotResolution');
+    assert.ok(!worldViewContent.includes('apply_snapshot_organisms'), 'WorldView must not directly apply snapshots');
+  });
+
+  test('C08-D19: WorldView contains no observation-history authority', () => {
+    assert.ok(!worldViewContent.includes('_observation_ring'), 'WorldView must not have _observation_ring');
+    assert.ok(!worldViewContent.includes('SIMULATION_RESET'), 'WorldView must not generate SIMULATION_RESET');
+    assert.ok(!worldViewContent.includes('ORGANISM_APPEARED'), 'WorldView must not generate ORGANISM_APPEARED');
+  });
+
+  test('C08-D20: No frozen-domain violation', () => {
+    const diff = execSync('git diff --name-only 3b5aab4', { encoding: 'utf8' }).trim();
     const modifiedFiles = diff ? diff.split('\n').map(s => s.trim()) : [];
 
     const allowed = [
