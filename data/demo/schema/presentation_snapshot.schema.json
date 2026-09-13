@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linhsinhvn.game/demo/presentation_snapshot.schema.json",
+  "title": "PresentationSnapshot",
+  "description": "Read-only presentation snapshot for DEMO-01 First Playable. Composes authoritative, derived, and presentation-only tiers.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "simulation_tick",
+    "simulation_seed",
+    "playback_status",
+    "playback_speed",
+    "census",
+    "organisms"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "simulation_seed": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]{16}$"
+    },
+    "playback_status": {
+      "type": "string",
+      "enum": [
+        "PLAYING",
+        "PAUSED"
+      ]
+    },
+    "playback_speed": {
+      "type": "integer",
+      "enum": [
+        1,
+        2,
+        5,
+        10
+      ]
+    },
+    "census": {
+      "type": "object",
+      "required": [
+        "alive_count",
+        "dead_count",
+        "total_count"
+      ],
+      "properties": {
+        "alive_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dead_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "organisms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "organism_id",
+          "species_id",
+          "generation",
+          "sex",
+          "is_alive",
+          "current_stage_id",
+          "current_substage_id",
+          "stored_energy",
+          "structural_biomass",
+          "eta_current",
+          "developmental_progress",
+          "position",
+          "action_intent",
+          "habitat_id",
+          "sheltered_in",
+          "micro_climate",
+          "resource_zone_ids",
+          "action_display_label",
+          "stage_display_label"
+        ],
+        "properties": {
+          "organism_id": {
+            "type": "string"
+          },
+          "species_id": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sex": {
+            "type": "string",
+            "enum": [
+              "MALE",
+              "FEMALE"
+            ]
+          },
+          "is_alive": {
+            "type": "boolean"
+          },
+          "current_stage_id": {
+            "type": "string",
+            "enum": [
+              "STAGE_EGG",
+              "STAGE_LARVA",
+              "STAGE_PUPA",
+              "STAGE_ADULT"
+            ]
+          },
+          "current_substage_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stored_energy": {
+            "type": "number",
+            "minimum": 0
+          },
+          "structural_biomass": {
+            "type": "number",
+            "minimum": 0
+          },
+          "eta_current": {
+            "type": "number",
+            "minimum": 0.6,
+            "maximum": 1
+          },
+          "developmental_progress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "position": {
+            "type": "object",
+            "required": [
+              "x",
+              "y",
+              "z"
+            ],
+            "properties": {
+              "x": {
+                "type": "integer"
+              },
+              "y": {
+                "type": "integer"
+              },
+              "z": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          },
+          "action_intent": {
+            "type": "string",
+            "enum": [
+              "FORAGE",
+              "REST",
+              "SEEK_SHELTER",
+              "SEEK_MATE",
+              "FLEE",
+              "EXPLORE",
+              "NONE",
+              "IDLE"
+            ]
+          },
+          "habitat_id": {
+            "type": "string"
+          },
+          "sheltered_in": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "micro_climate": {
+            "type": "object"
+          },
+          "resource_zone_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "action_display_label": {
+            "type": "string"
+          },
+          "stage_display_label": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}
