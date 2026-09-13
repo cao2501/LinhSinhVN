@@ -2,25 +2,31 @@ class_name OrganismsOverlay
 extends Node2D
 
 # ==============================================================================
-# LinhSinhVN Presentation Shell — DEMO-01-C / C-09-D Organisms Overlay
+# LinhSinhVN Presentation Shell — DEMO-01-C / C-09-E Organisms Overlay
 #
-# Checkpoint: DEMO-01-C / C-09-D Organism Visual Interpolation
-# Base: f5d04d2 (C-09-C Closed)
+# Checkpoint: DEMO-01-C / C-09-E Organism Selection & Inspection
+# Base: 74666fb (C-09-D Closed)
 #
 # PRESENTATION-ONLY ORGANISM VISUAL OVERLAY:
 # - Renders procedural insect morphology (C-09-B) driven by authoritative snapshot state.
 # - Interpolates visual X/Y pixel center between accepted snapshots (C-09-D).
+# - Handles presentation mouse hover and selection hit-testing (C-09-E).
+# - Emits identity-based selection signals for inspection UI (C-09-E).
 # - ZERO simulation authority: never moves simulation coordinates, never steps ticks.
 # - ZERO duplicate acceptance: only receives snapshots already accepted by SnapshotSynchronizer.
-# - ZERO cross-epoch interpolation: purges interpolation history on epoch advancement.
+# - ZERO cross-epoch leakage: purges selection and interpolation on epoch advancement.
 # - ZERO RNG, zero pathfinding, zero collision, zero biological inference.
 # ==============================================================================
+
+signal organism_selected(organism_id: String)
+signal organism_hovered(organism_id: String)
 
 const Config = preload("res://scripts/presentation/demo_world_config.gd")
 const Morphology = preload("res://scripts/presentation/organism_morphology.gd")
 const Interpolator = preload("res://scripts/presentation/organism_interpolator.gd")
 
 const INTERPOLATION_DURATION: float = 0.1 # 100ms baseline presentation interval
+const HIT_RADIUS: float = 12.0            # Pixel hit-test radius
 
 # Canonical Stage Colors (Fallback / Baseline Palettes)
 const STAGE_COLORS: Dictionary = {
@@ -61,6 +67,8 @@ const ACTION_COLORS: Dictionary = {
 }
 
 const DEAD_COLOR: Color = Color(0.459, 0.459, 0.459, 0.55) # #757575 (55% alpha)
+const SELECTION_COLOR: Color = Color(1.0, 0.88, 0.2, 0.95) # Vibrant Gold
+const HOVER_COLOR: Color = Color(1.0, 1.0, 1.0, 0.55)      # Soft White
 
 @export var snapshot_synchronizer_path: NodePath = NodePath("../SnapshotSynchronizer")
 
@@ -72,6 +80,10 @@ var _last_seen_epoch: int = -1
 var _has_received_first_snapshot: bool = false
 var _synchronizer: Node = null
 
+# Selection & Hover Presentation State (C-09-E)
+var _hovered_organism_id: String = ""
+var _selected_organism_id: String = ""
+
 func _ready() -> void:
 	z_index = 20
 	if _synchronizer == null and has_node(snapshot_synchronizer_path):
@@ -81,10 +93,42 @@ func _ready() -> void:
 func set_active_z_layer(new_layer: int) -> void:
 	if active_z_layer != new_layer:
 		active_z_layer = new_layer
+		# Deselect / dehover if active z-layer hides the organism
+		if not _selected_organism_id.is_empty():
+			var org: Dictionary = get_organism_by_id(_selected_organism_id)
+			var pos: Dictionary = org.get("position", {})
+			if int(pos.get("z", 0)) != active_z_layer:
+				_selected_organism_id = ""
+				organism_selected.emit("")
+		_hovered_organism_id = ""
+		organism_hovered.emit("")
 		queue_redraw()
 
 func set_synchronizer(sync_node: Node) -> void:
 	_synchronizer = sync_node
+
+func get_selected_organism_id() -> String:
+	return _selected_organism_id
+
+func get_hovered_organism_id() -> String:
+	return _hovered_organism_id
+
+func select_organism(org_id: String) -> void:
+	if _selected_organism_id != org_id:
+		_selected_organism_id = org_id
+		organism_selected.emit(_selected_organism_id)
+		queue_redraw()
+
+func get_selected_organism_data() -> Dictionary:
+	if _selected_organism_id.is_empty():
+		return {}
+	return get_organism_by_id(_selected_organism_id)
+
+func get_organism_by_id(org_id: String) -> Dictionary:
+	for org in _cached_organisms:
+		if typeof(org) == TYPE_DICTIONARY and String(org.get("organism_id", "")) == org_id:
+			return org.duplicate(true)
+	return {}
 
 func get_interpolation_state(org_id: Variant) -> Dictionary:
 	return _interpolation_states.get(org_id, {}).duplicate()
@@ -109,10 +153,16 @@ func apply_snapshot_organisms(organisms: Array) -> void:
 		_has_received_first_snapshot = true
 		_last_seen_epoch = current_epoch
 		_interpolation_states.clear()
+		_selected_organism_id = ""
+		_hovered_organism_id = ""
 		is_epoch_reset = true
 	elif current_epoch != _last_seen_epoch:
 		_last_seen_epoch = current_epoch
 		_interpolation_states.clear()
+		_selected_organism_id = ""
+		_hovered_organism_id = ""
+		organism_selected.emit("")
+		organism_hovered.emit("")
 		is_epoch_reset = true
 
 	# 3. Process accepted snapshot organisms
@@ -124,7 +174,7 @@ func apply_snapshot_organisms(organisms: Array) -> void:
 			continue
 		_cached_organisms.append(org)
 
-		var org_id: Variant = org.get("organism_id", "")
+		var org_id: String = String(org.get("organism_id", ""))
 		active_ids[org_id] = true
 
 		var pos_variant: Variant = org.get("position", null)
@@ -179,6 +229,16 @@ func apply_snapshot_organisms(organisms: Array) -> void:
 		if not active_ids.has(kid):
 			_interpolation_states.erase(kid)
 
+	# 5. Refresh or Clear Selection Lifecycle
+	if not _selected_organism_id.is_empty():
+		if not active_ids.has(_selected_organism_id):
+			# Selected organism completely missing from snapshot -> clear selection
+			_selected_organism_id = ""
+			organism_selected.emit("")
+		else:
+			# Selected organism exists (alive or dead) -> refresh selection signal
+			organism_selected.emit(_selected_organism_id)
+
 	queue_redraw()
 
 func _process(delta: float) -> void:
@@ -203,6 +263,89 @@ func _get_organism_visual_position(org: Dictionary, fallback_center: Vector2) ->
 		var slot_offset: Vector2 = fallback_center - target_px
 		return base_interp + slot_offset
 	return fallback_center
+
+func _hit_test_organism(pixel_pos: Vector2) -> Dictionary:
+	if _cached_organisms.is_empty():
+		return {}
+
+	# Group organisms by cell key to get exact slot offsets identical to _draw()
+	var cell_groups: Dictionary = {}
+	for org in _cached_organisms:
+		var pos: Variant = org.get("position", null)
+		if typeof(pos) != TYPE_DICTIONARY:
+			continue
+		var z: int = int(pos.get("z", 0))
+		if z != active_z_layer:
+			continue
+		var x: int = int(pos.get("x", 0))
+		var y: int = int(pos.get("y", 0))
+		var key: String = "%d_%d_%d" % [x, y, z]
+		if not cell_groups.has(key):
+			cell_groups[key] = []
+		cell_groups[key].append(org)
+
+	var best_org: Dictionary = {}
+	var min_dist: float = HIT_RADIUS
+
+	for key in cell_groups.keys():
+		var group: Array = cell_groups[key]
+		group.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return String(a.get("organism_id", "")) < String(b.get("organism_id", ""))
+		)
+		var count: int = group.size()
+		var first_pos: Dictionary = group[0].get("position", {})
+		var cell_x: int = int(first_pos.get("x", 0))
+		var cell_y: int = int(first_pos.get("y", 0))
+		var origin: Vector2 = Config.world_to_pixel(Vector2i(cell_x, cell_y))
+
+		for i in range(count):
+			var org: Dictionary = group[i]
+			var fallback_center: Vector2 = origin + Vector2(8.0, 8.0)
+			if count == 2:
+				fallback_center = origin + (Vector2(5.0, 8.0) if i == 0 else Vector2(11.0, 8.0))
+			elif count == 3:
+				fallback_center = origin + (Vector2(5.0, 5.0) if i == 0 else (Vector2(11.0, 5.0) if i == 1 else Vector2(8.0, 11.0)))
+			elif count == 4:
+				fallback_center = origin + (Vector2(5.0, 5.0) if i == 0 else (Vector2(11.0, 5.0) if i == 1 else (Vector2(5.0, 11.0) if i == 2 else Vector2(11.0, 11.0))))
+			else:
+				# N > 4: only group[0] rendered at center
+				if i > 0:
+					continue
+				fallback_center = origin + Vector2(8.0, 8.0)
+
+			var visual_pos: Vector2 = _get_organism_visual_position(org, fallback_center)
+			var d: float = pixel_pos.distance_to(visual_pos)
+			if d <= min_dist:
+				if is_equal_approx(d, min_dist) and not best_org.is_empty():
+					# Deterministic tie-break: organism_id ASC
+					if String(org.get("organism_id", "")) < String(best_org.get("organism_id", "")):
+						best_org = org
+						min_dist = d
+				else:
+					best_org = org
+					min_dist = d
+
+	return best_org
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		var mouse_pos: Vector2 = get_global_mouse_position()
+		var candidate: Dictionary = _hit_test_organism(mouse_pos)
+		var new_hover_id: String = String(candidate.get("organism_id", ""))
+		if new_hover_id != _hovered_organism_id:
+			_hovered_organism_id = new_hover_id
+			organism_hovered.emit(_hovered_organism_id)
+			queue_redraw()
+	elif event is InputEventMouseButton:
+		var mb: InputEventMouseButton = event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			var mouse_pos: Vector2 = get_global_mouse_position()
+			var candidate: Dictionary = _hit_test_organism(mouse_pos)
+			var new_selected_id: String = String(candidate.get("organism_id", ""))
+			if new_selected_id != _selected_organism_id:
+				_selected_organism_id = new_selected_id
+				organism_selected.emit(_selected_organism_id)
+				queue_redraw()
 
 func _draw() -> void:
 	if _cached_organisms.is_empty():
@@ -243,32 +386,52 @@ func _draw() -> void:
 
 		if count == 1:
 			var draw_pos: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(8.0, 8.0))
-			_draw_organism(group[0], draw_pos)
+			_draw_organism_with_highlight(group[0], draw_pos)
 		elif count == 2:
 			var pos0: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(5.0, 8.0))
 			var pos1: Vector2 = _get_organism_visual_position(group[1], origin + Vector2(11.0, 8.0))
-			_draw_organism(group[0], pos0)
-			_draw_organism(group[1], pos1)
+			_draw_organism_with_highlight(group[0], pos0)
+			_draw_organism_with_highlight(group[1], pos1)
 		elif count == 3:
 			var pos0: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(5.0, 5.0))
 			var pos1: Vector2 = _get_organism_visual_position(group[1], origin + Vector2(11.0, 5.0))
 			var pos2: Vector2 = _get_organism_visual_position(group[2], origin + Vector2(8.0, 11.0))
-			_draw_organism(group[0], pos0)
-			_draw_organism(group[1], pos1)
-			_draw_organism(group[2], pos2)
+			_draw_organism_with_highlight(group[0], pos0)
+			_draw_organism_with_highlight(group[1], pos1)
+			_draw_organism_with_highlight(group[2], pos2)
 		elif count == 4:
 			var pos0: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(5.0, 5.0))
 			var pos1: Vector2 = _get_organism_visual_position(group[1], origin + Vector2(11.0, 5.0))
 			var pos2: Vector2 = _get_organism_visual_position(group[2], origin + Vector2(5.0, 11.0))
 			var pos3: Vector2 = _get_organism_visual_position(group[3], origin + Vector2(11.0, 11.0))
-			_draw_organism(group[0], pos0)
-			_draw_organism(group[1], pos1)
-			_draw_organism(group[2], pos2)
-			_draw_organism(group[3], pos3)
+			_draw_organism_with_highlight(group[0], pos0)
+			_draw_organism_with_highlight(group[1], pos1)
+			_draw_organism_with_highlight(group[2], pos2)
+			_draw_organism_with_highlight(group[3], pos3)
 		else:
 			var draw_pos: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(8.0, 8.0))
-			_draw_organism(group[0], draw_pos)
+			_draw_organism_with_highlight(group[0], draw_pos)
 			_draw_stack_badge(origin, count - 1)
+
+func _draw_organism_with_highlight(org: Dictionary, center: Vector2) -> void:
+	var org_id: String = String(org.get("organism_id", ""))
+
+	# 1. Render selection highlight ring (if selected)
+	if not _selected_organism_id.is_empty() and org_id == _selected_organism_id:
+		var sel_r: float = 10.5
+		draw_arc(center, sel_r, 0.0, TAU, 24, SELECTION_COLOR, 2.0)
+		# 4 subtle corner tick accents
+		draw_line(center + Vector2(-sel_r - 2.0, 0.0), center + Vector2(-sel_r + 2.0, 0.0), SELECTION_COLOR, 1.5)
+		draw_line(center + Vector2(sel_r - 2.0, 0.0), center + Vector2(sel_r + 2.0, 0.0), SELECTION_COLOR, 1.5)
+		draw_line(center + Vector2(0.0, -sel_r - 2.0), center + Vector2(0.0, -sel_r + 2.0), SELECTION_COLOR, 1.5)
+		draw_line(center + Vector2(0.0, sel_r - 2.0), center + Vector2(0.0, sel_r + 2.0), SELECTION_COLOR, 1.5)
+	elif not _hovered_organism_id.is_empty() and org_id == _hovered_organism_id:
+		# 2. Render hover highlight ring (if hovered)
+		var hov_r: float = 9.5
+		draw_arc(center, hov_r, 0.0, TAU, 16, HOVER_COLOR, 1.2)
+
+	# 3. Render organism morphology
+	_draw_organism(org, center)
 
 func _draw_ellipse(pos: Vector2, rx: float, ry: float, color: Color) -> void:
 	var points: PackedVector2Array = PackedVector2Array()
@@ -408,7 +571,7 @@ func _draw_organism(org: Dictionary, center: Vector2) -> void:
 	# 9. Render Developmental Progress Arc
 	if is_alive:
 		var is_numeric: bool = (typeof(progress_variant) == TYPE_FLOAT or typeof(progress_variant) == TYPE_INT)
-		var is_valid_p: bool = false
+		var is_valid: bool = false
 		var p: float = 0.0
 
 		if is_numeric:
