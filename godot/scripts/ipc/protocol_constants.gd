@@ -1,0 +1,22 @@
+class_name ProtocolConstants
+extends RefCounted
+
+const PROTOCOL_VERSION: String = "1.0"
+const DEFAULT_IPC_HOST: String = "127.0.0.1"
+const DEFAULT_IPC_PORT: int = 7777
+const MAX_FRAME_SIZE: int = 1048576 # 1 MiB
+
+const COMMAND_STEP: String = "step"
+const COMMAND_PLAY: String = "play"
+const COMMAND_PAUSE: String = "pause"
+const COMMAND_RESET: String = "reset"
+const COMMAND_GET_SNAPSHOT: String = "getSnapshot"
+
+const ERROR_MALFORMED_JSON: String = "MALFORMED_JSON"
+const ERROR_INVALID_REQUEST: String = "INVALID_REQUEST"
+const ERROR_PROTOCOL_VERSION_UNSUPPORTED: String = "PROTOCOL_VERSION_UNSUPPORTED"
+const ERROR_UNKNOWN_COMMAND: String = "UNKNOWN_COMMAND"
+const ERROR_INVALID_ARGUMENT: String = "INVALID_ARGUMENT"
+const ERROR_MESSAGE_TOO_LARGE: String = "MESSAGE_TOO_LARGE"
+const ERROR_SESSION_ERROR: String = "SESSION_ERROR"
+const ERROR_INTERNAL_ERROR: String = "INTERNAL_ERROR"

@@ -1,0 +1,14 @@
+; Engine configuration file.
+; Minimal project configuration for LinhSinhVN Presentation Shell (DEMO-01-C)
+
+config_version=5
+
+[application]
+
+config/name="LinhSinhVN Presentation Shell"
+config/description="Presentation shell for LinhSinhVN headless simulation core"
+config/features=PackedStringArray("4.0", "Forward Plus")
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
