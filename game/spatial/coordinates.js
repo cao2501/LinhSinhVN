@@ -1,13 +1,16 @@
 /**
  * LinhSinhVN — Spatial Coordinate Primitives & Geometric Distance Functions
  *
- * TASK 08-B: Deterministic Spatial Foundation
+ * TASK 08-B: Deterministic Spatial Foundation (Harden Integer Safety)
  *
  * Strict integer coordinates P = (x, y, z) in Z^3.
- * Signed 32-bit integer validation.
- * Rejects non-integers, NaN, Infinity.
+ * Signed 32-bit integer validation: INT32_MIN to INT32_MAX.
+ * Rejects non-integers, floats, NaN, Infinity, and out-of-range integers.
  * Canonical grid distance & Euclidean distance squared.
  */
+
+export const INT32_MIN = -2147483648;
+export const INT32_MAX = 2147483647;
 
 export const CANONICAL_FACINGS = Object.freeze([
   'NORTH',
@@ -25,7 +28,7 @@ export const DEFAULT_K_VERTICAL = 3; // Prototype Spatial Geometric Scaling Cons
 export const DEFAULT_K_Z = 2;        // Prototype Spatial Axis Scaling Constant
 
 /**
- * Asserts that a value is a strict finite signed integer.
+ * Asserts that a value is a strict finite signed 32-bit integer.
  * @param {unknown} val
  * @param {string} name
  * @returns {number}
@@ -34,11 +37,28 @@ export function validateInteger(val, name = 'value') {
   if (typeof val !== 'number' || !Number.isFinite(val) || !Number.isInteger(val)) {
     throw new TypeError(`[SpatialCoordinates] ${name} must be a strict finite integer. Received: ${val} (${typeof val})`);
   }
+  if (val < INT32_MIN || val > INT32_MAX) {
+    throw new RangeError(`[SpatialCoordinates] ${name} must be within signed 32-bit integer range [${INT32_MIN}, ${INT32_MAX}]. Received: ${val}`);
+  }
+  return val;
+}
+
+/**
+ * Asserts that a value is a strict finite safe integer (e.g. For grid sizes and total cells).
+ * @param {unknown} val
+ * @param {string} name
+ * @returns {number}
+ */
+export function validateSafeInteger(val, name = 'value') {
+  if (typeof val !== 'number' || !Number.isFinite(val) || !Number.isSafeInteger(val)) {
+    throw new TypeError(`[SpatialCoordinates] ${name} must be a safe integer. Received: ${val} (${typeof val})`);
+  }
   return val;
 }
 
 /**
  * Validates a 3D coordinate object P = (x, y, z).
+ * All components must be valid signed 32-bit integers.
  * @param {unknown} pos
  * @param {string} [name='position']
  * @returns {{ x: number, y: number, z: number }}

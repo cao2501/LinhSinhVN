@@ -20,7 +20,9 @@ import {
   SpatialWorld,
   CANONICAL_FACINGS,
   DEFAULT_K_VERTICAL,
-  DEFAULT_K_Z
+  DEFAULT_K_Z,
+  INT32_MIN,
+  INT32_MAX
 } from '../../game/spatial/index.js';
 
 import { PopulationRegistry } from '../../game/population/population_registry.js';
@@ -631,6 +633,134 @@ describe('Deterministic Spatial Foundation (TASK 08-B)', () => {
       const s2 = runOps();
       assert.deepEqual(s1, s2);
       assert.equal(JSON.stringify(s1), JSON.stringify(s2));
+    });
+  });
+
+  // =========================================================================
+  // TASK 08-B PATCH — INTEGER SAFETY & SPATIAL INDEX AUTHORITY AUDIT SUITE
+  // =========================================================================
+  describe('TASK 08-B Patch: Integer Safety & Index Authority Hardening', () => {
+
+    test('PATCH-01: True signed 32-bit boundary enforcement (INT32_MIN and INT32_MAX)', () => {
+      // INT32_MIN and INT32_MAX imported at top level
+      assert.equal(INT32_MIN, -2147483648);
+      assert.equal(INT32_MAX, 2147483647);
+
+      // Boundary values are accepted where in-bounds
+      assert.doesNotThrow(() => validateInteger(INT32_MIN, 'test_min'));
+      assert.doesNotThrow(() => validateInteger(INT32_MAX, 'test_max'));
+      assert.doesNotThrow(() => validateInteger(0, 'test_zero'));
+
+      // Outside Int32 range must throw RangeError
+      assert.throws(() => validateInteger(INT32_MAX + 1, 'overflow'), RangeError);
+      assert.throws(() => validateInteger(INT32_MIN - 1, 'underflow'), RangeError);
+      assert.throws(() => validateInteger(Number.MAX_SAFE_INTEGER, 'max_safe'), RangeError);
+      assert.throws(() => validateInteger(Number.MIN_SAFE_INTEGER, 'min_safe'), RangeError);
+
+      // Coordinate validation enforces Int32 bounds
+      assert.throws(() => validateCoordinate({ x: INT32_MAX + 1, y: 0, z: 0 }), RangeError);
+      assert.throws(() => validateCoordinate({ x: 0, y: INT32_MIN - 1, z: 0 }), RangeError);
+      assert.throws(() => validateCoordinate({ x: 0, y: 0, z: 2147483648 }), RangeError);
+    });
+
+    test('PATCH-02: SpatialGridBoundary safe-integer invariants', () => {
+      // Non-safe width/height rejected
+      assert.throws(() => new SpatialGridBoundary({ width: Number.MAX_SAFE_INTEGER + 1, height: 10, z_min: 0, z_max: 1 }), TypeError);
+      assert.throws(() => new SpatialGridBoundary({ width: 10, height: Number.MAX_SAFE_INTEGER + 1, z_min: 0, z_max: 1 }), TypeError);
+
+      // Width/height <= 0 rejected
+      assert.throws(() => new SpatialGridBoundary({ width: 0, height: 10, z_min: 0, z_max: 1 }), RangeError);
+      assert.throws(() => new SpatialGridBoundary({ width: 10, height: -5, z_min: 0, z_max: 1 }), RangeError);
+
+      // Unsafe totalCells rejected (width * height * strata > Number.MAX_SAFE_INTEGER)
+      // Number.MAX_SAFE_INTEGER = 9007199254740991
+      // If planeSize or totalCells exceeds safe integer, throws RangeError
+      assert.throws(() => new SpatialGridBoundary({ width: 1000000000, height: 1000000000, z_min: 0, z_max: 10 }), RangeError);
+
+      // TotalCells is strictly a safe integer on valid boundary
+      const boundary = new SpatialGridBoundary({ width: 100, height: 100, z_min: -1, z_max: 2 });
+      assert.equal(Number.isSafeInteger(boundary.totalCells), true);
+      assert.equal(boundary.totalCells, 40000);
+    });
+
+    test('PATCH-03: Flat index safe-integer & invalid decode rejection', () => {
+      const boundary = new SpatialGridBoundary({ width: 50, height: 50, z_min: -1, z_max: 2 });
+
+      // Valid index conversion
+      const idx = coordinateToIndex({ x: 10, y: 10, z: 0 }, boundary);
+      assert.equal(Number.isSafeInteger(idx), true);
+
+      // Invalid decode index rejected
+      assert.throws(() => indexToCoordinate(-1, boundary), RangeError);
+      assert.throws(() => indexToCoordinate(boundary.totalCells, boundary), RangeError);
+      assert.throws(() => indexToCoordinate(Number.MAX_SAFE_INTEGER, boundary), RangeError);
+      assert.throws(() => indexToCoordinate(Number.NaN, boundary), TypeError);
+      assert.throws(() => indexToCoordinate('100', boundary), TypeError);
+
+      // Lossless exact round-trip both ways
+      // coordinate -> index -> coordinate
+      const pOrig = { x: 25, y: 35, z: 1 };
+      const computedIndex = coordinateToIndex(pOrig, boundary);
+      const pRecovered = indexToCoordinate(computedIndex, boundary);
+      assert.deepEqual(pRecovered, pOrig);
+
+      // index -> coordinate -> index
+      const targetIndex = 1234;
+      const coordFromIndex = indexToCoordinate(targetIndex, boundary);
+      const recomputedIndex = coordinateToIndex(coordFromIndex, boundary);
+      assert.equal(recomputedIndex, targetIndex);
+    });
+
+    test('PATCH-04: SpatialIndex cannot independently act as authority', () => {
+      const world = new SpatialWorld({ width: 20, height: 20, z_min: -1, z_max: 2 });
+      world.registerEntity({ entity_id: 'legit_01', position: { x: 5, y: 5, z: 0 } });
+
+      // 1. SpatialIndex cannot independently create an authoritative entity
+      // Directly mutating index._cellToEntities does NOT add entity to registry
+      const cellIndex = coordinateToIndex({ x: 5, y: 5, z: 0 }, world.boundary);
+      world.index.addEntity(cellIndex, 'ghost_entity');
+
+      assert.equal(world.hasEntity('ghost_entity'), false);
+      assert.equal(world.getPosition('ghost_entity'), null);
+      assert.equal(world.getEntity('ghost_entity'), null);
+
+      // 2. Rebuilding index purges any phantom entities not in authoritative registry
+      world.rebuildIndex();
+      assert.deepEqual(world.getEntitiesAtCell({ x: 5, y: 5, z: 0 }), ['legit_01']);
+      assert.equal(world.hasEntity('ghost_entity'), false);
+
+      // 3. Serialized snapshot derives strictly from authoritative registry, NOT index
+      const snapshot = world.serialize();
+      assert.equal(snapshot.entities.some(e => e.entity_id === 'ghost_entity'), false);
+      assert.equal(snapshot.entities.length, 1);
+      assert.equal(snapshot.entities[0].entity_id, 'legit_01');
+    });
+
+    test('PATCH-05: Registry state can 100% regenerate index state losslessly', () => {
+      const world = new SpatialWorld({ width: 30, height: 30, z_min: -1, z_max: 2 });
+      world.registerEntity({ entity_id: 'org_z', position: { x: 10, y: 10, z: -1 } });
+      world.registerEntity({ entity_id: 'org_a', position: { x: 10, y: 10, z: -1 } });
+      world.registerEntity({ entity_id: 'org_m', position: { x: 10, y: 10, z: -1 } });
+      world.registerEntity({ entity_id: 'org_top', position: { x: 15, y: 15, z: 2 } });
+
+      const stateBefore = {
+        cell_10_10: world.getEntitiesAtCell({ x: 10, y: 10, z: -1 }),
+        cell_15_15: world.getEntitiesAtCell({ x: 15, y: 15, z: 2 })
+      };
+
+      // Wipe index completely
+      world.index._cellToEntities.clear();
+      assert.deepEqual(world.getEntitiesAtCell({ x: 10, y: 10, z: -1 }), []);
+
+      // Regenerate from registry
+      world.rebuildIndex();
+      const stateAfter = {
+        cell_10_10: world.getEntitiesAtCell({ x: 10, y: 10, z: -1 }),
+        cell_15_15: world.getEntitiesAtCell({ x: 15, y: 15, z: 2 })
+      };
+
+      assert.deepEqual(stateAfter, stateBefore);
+      assert.deepEqual(stateAfter.cell_10_10, ['org_a', 'org_m', 'org_z']);
     });
   });
 });

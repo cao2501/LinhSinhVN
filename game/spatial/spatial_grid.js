@@ -1,14 +1,14 @@
 /**
  * LinhSinhVN — Spatial Grid Boundary & Flat Reversible Indexing
  *
- * TASK 08-B: Deterministic Spatial Foundation
+ * TASK 08-B: Deterministic Spatial Foundation (Harden Integer & Index Invariants)
  *
  * Maps 3D coordinate P = (x, y, z) <-> 1D Flat Grid Index.
  * Index = (z - z_min) * width * height + y * width + x.
- * Reversible, lossless, deterministic.
+ * Reversible, lossless, deterministic, safe-integer bounded.
  */
 
-import { validateInteger, validateCoordinate, freezeCoordinate } from './coordinates.js';
+import { validateInteger, validateSafeInteger, validateCoordinate, freezeCoordinate, INT32_MIN, INT32_MAX } from './coordinates.js';
 
 export class SpatialGridBoundary {
   /**
@@ -19,30 +19,42 @@ export class SpatialGridBoundary {
    * @param {number} params.z_max
    */
   constructor({ width, height, z_min, z_max }) {
-    this.width = validateInteger(width, 'width');
-    this.height = validateInteger(height, 'height');
+    this.width = validateSafeInteger(width, 'width');
+    this.height = validateSafeInteger(height, 'height');
     this.z_min = validateInteger(z_min, 'z_min');
     this.z_max = validateInteger(z_max, 'z_max');
 
     if (this.width <= 0) {
-      throw new RangeError(`[SpatialGridBoundary] width must be > 0. Received: ${this.width}`);
+      throw new RangeError(`[SpatialGridBoundary] width must be a positive integer > 0. Received: ${this.width}`);
     }
     if (this.height <= 0) {
-      throw new RangeError(`[SpatialGridBoundary] height must be > 0. Received: ${this.height}`);
+      throw new RangeError(`[SpatialGridBoundary] height must be a positive integer > 0. Received: ${this.height}`);
     }
     if (this.z_min > this.z_max) {
       throw new RangeError(`[SpatialGridBoundary] z_min (${this.z_min}) must be <= z_max (${this.z_max})`);
     }
 
     this.strataCount = (this.z_max - this.z_min) + 1;
+    if (!Number.isSafeInteger(this.strataCount) || this.strataCount <= 0) {
+      throw new RangeError(`[SpatialGridBoundary] strataCount must be a positive safe integer. Received: ${this.strataCount}`);
+    }
+
     this.planeSize = this.width * this.height;
+    if (!Number.isSafeInteger(this.planeSize) || this.planeSize <= 0) {
+      throw new RangeError(`[SpatialGridBoundary] planeSize (width * height) exceeds Number.MAX_SAFE_INTEGER.`);
+    }
+
     this.totalCells = this.planeSize * this.strataCount;
+    if (!Number.isSafeInteger(this.totalCells) || this.totalCells <= 0) {
+      throw new RangeError(`[SpatialGridBoundary] totalCells exceeds Number.MAX_SAFE_INTEGER.`);
+    }
 
     Object.freeze(this);
   }
 
   /**
    * Checks whether a coordinate lies within world boundaries.
+   * Enforces signed 32-bit integer validation.
    * @param {{ x: number, y: number, z: number }} pos
    * @returns {boolean}
    */
@@ -50,6 +62,9 @@ export class SpatialGridBoundary {
     if (!pos || typeof pos !== 'object') return false;
     const { x, y, z } = pos;
     if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return false;
+    if (x < INT32_MIN || x > INT32_MAX || y < INT32_MIN || y > INT32_MAX || z < INT32_MIN || z > INT32_MAX) {
+      return false;
+    }
     return (
       x >= 0 && x < this.width &&
       y >= 0 && y < this.height &&
@@ -79,6 +94,8 @@ export class SpatialGridBoundary {
  * Converts 3D coordinate to 1D Flat Grid Index.
  * Index = (z - z_min) * (width * height) + y * width + x
  *
+ * Guarantees result is a safe integer in [0, bounds.totalCells - 1].
+ *
  * @param {{ x: number, y: number, z: number }} pos
  * @param {SpatialGridBoundary} bounds
  * @returns {number}
@@ -90,11 +107,17 @@ export function coordinateToIndex(pos, bounds) {
   const p = bounds.assertWithinBounds(pos, 'pos');
   const zOffset = p.z - bounds.z_min;
   const index = zOffset * bounds.planeSize + p.y * bounds.width + p.x;
+
+  if (!Number.isSafeInteger(index) || index < 0 || index >= bounds.totalCells) {
+    throw new RangeError(`[SpatialGrid] Derived flat index is not a valid safe integer: ${index}`);
+  }
+
   return index;
 }
 
 /**
  * Reversibly converts 1D Flat Grid Index back to 3D coordinate.
+ * Enforces safe integer bounds: index in [0, bounds.totalCells - 1].
  *
  * @param {number} index
  * @param {SpatialGridBoundary} bounds
@@ -104,7 +127,7 @@ export function indexToCoordinate(index, bounds) {
   if (!(bounds instanceof SpatialGridBoundary)) {
     throw new TypeError('[SpatialGrid] bounds must be an instance of SpatialGridBoundary');
   }
-  validateInteger(index, 'index');
+  validateSafeInteger(index, 'index');
   if (index < 0 || index >= bounds.totalCells) {
     throw new RangeError(`[SpatialGrid] Flat index out of range: ${index}. Valid range: [0, ${bounds.totalCells - 1}]`);
   }
