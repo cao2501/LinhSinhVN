@@ -1,8 +1,26 @@
 class_name OrganismsOverlay
 extends Node2D
 
+# ==============================================================================
+# LinhSinhVN Presentation Shell — DEMO-01-C / C-09-D Organisms Overlay
+#
+# Checkpoint: DEMO-01-C / C-09-D Organism Visual Interpolation
+# Base: f5d04d2 (C-09-C Closed)
+#
+# PRESENTATION-ONLY ORGANISM VISUAL OVERLAY:
+# - Renders procedural insect morphology (C-09-B) driven by authoritative snapshot state.
+# - Interpolates visual X/Y pixel center between accepted snapshots (C-09-D).
+# - ZERO simulation authority: never moves simulation coordinates, never steps ticks.
+# - ZERO duplicate acceptance: only receives snapshots already accepted by SnapshotSynchronizer.
+# - ZERO cross-epoch interpolation: purges interpolation history on epoch advancement.
+# - ZERO RNG, zero pathfinding, zero collision, zero biological inference.
+# ==============================================================================
+
 const Config = preload("res://scripts/presentation/demo_world_config.gd")
 const Morphology = preload("res://scripts/presentation/organism_morphology.gd")
+const Interpolator = preload("res://scripts/presentation/organism_interpolator.gd")
+
+const INTERPOLATION_DURATION: float = 0.1 # 100ms baseline presentation interval
 
 # Canonical Stage Colors (Fallback / Baseline Palettes)
 const STAGE_COLORS: Dictionary = {
@@ -44,12 +62,20 @@ const ACTION_COLORS: Dictionary = {
 
 const DEAD_COLOR: Color = Color(0.459, 0.459, 0.459, 0.55) # #757575 (55% alpha)
 
-# Presentation Cache
+@export var snapshot_synchronizer_path: NodePath = NodePath("../SnapshotSynchronizer")
+
+# Presentation Cache & State
 var active_z_layer: int = 0
 var _cached_organisms: Array = []
+var _interpolation_states: Dictionary = {}
+var _last_seen_epoch: int = -1
+var _has_received_first_snapshot: bool = false
+var _synchronizer: Node = null
 
 func _ready() -> void:
 	z_index = 20
+	if _synchronizer == null and has_node(snapshot_synchronizer_path):
+		_synchronizer = get_node_or_null(snapshot_synchronizer_path)
 	queue_redraw()
 
 func set_active_z_layer(new_layer: int) -> void:
@@ -57,12 +83,126 @@ func set_active_z_layer(new_layer: int) -> void:
 		active_z_layer = new_layer
 		queue_redraw()
 
+func set_synchronizer(sync_node: Node) -> void:
+	_synchronizer = sync_node
+
+func get_interpolation_state(org_id: Variant) -> Dictionary:
+	return _interpolation_states.get(org_id, {}).duplicate()
+
+func get_last_seen_epoch() -> int:
+	return _last_seen_epoch
+
+func get_cached_organisms() -> Array:
+	return _cached_organisms.duplicate()
+
 func apply_snapshot_organisms(organisms: Array) -> void:
+	# 1. Authoritative epoch resolution from SnapshotSynchronizer
+	var current_epoch: int = _last_seen_epoch
+	if _synchronizer != null and _synchronizer.has_method("get_session_epoch"):
+		current_epoch = int(_synchronizer.get_session_epoch())
+	elif _last_seen_epoch < 0:
+		current_epoch = 0
+
+	# 2. First snapshot or Epoch change barrier (Strict Reset Isolation)
+	var is_epoch_reset: bool = false
+	if not _has_received_first_snapshot:
+		_has_received_first_snapshot = true
+		_last_seen_epoch = current_epoch
+		_interpolation_states.clear()
+		is_epoch_reset = true
+	elif current_epoch != _last_seen_epoch:
+		_last_seen_epoch = current_epoch
+		_interpolation_states.clear()
+		is_epoch_reset = true
+
+	# 3. Process accepted snapshot organisms
+	var active_ids: Dictionary = {}
 	_cached_organisms.clear()
+
 	for org in organisms:
-		if typeof(org) == TYPE_DICTIONARY:
-			_cached_organisms.append(org)
+		if typeof(org) != TYPE_DICTIONARY:
+			continue
+		_cached_organisms.append(org)
+
+		var org_id: Variant = org.get("organism_id", "")
+		active_ids[org_id] = true
+
+		var pos_variant: Variant = org.get("position", null)
+		if typeof(pos_variant) != TYPE_DICTIONARY:
+			continue
+		var pos_dict: Dictionary = pos_variant
+		var x: int = int(pos_dict.get("x", 0))
+		var y: int = int(pos_dict.get("y", 0))
+		var target_pos: Vector2 = Interpolator.calculate_pixel_center(x, y)
+
+		if is_epoch_reset:
+			# CASE D: Epoch Changed / Reset Barrier -> immediate snap, zero cross-epoch lerp
+			_interpolation_states[org_id] = {
+				"source_px": target_pos,
+				"target_px": target_pos,
+				"alpha": 1.0,
+				"last_seen_epoch": current_epoch
+			}
+		elif not _interpolation_states.has(org_id):
+			# CASE A: New Organism -> appear immediately at authoritative target
+			_interpolation_states[org_id] = {
+				"source_px": target_pos,
+				"target_px": target_pos,
+				"alpha": 1.0,
+				"last_seen_epoch": current_epoch
+			}
+		else:
+			# Existing organism in same epoch
+			var st: Dictionary = _interpolation_states[org_id]
+			var prev_target: Vector2 = st.get("target_px", target_pos)
+
+			if prev_target == target_pos:
+				# CASE B: Same Position -> keep target, alpha = 1.0, DO NOT restart interpolation
+				st["target_px"] = target_pos
+				st["alpha"] = 1.0
+				st["last_seen_epoch"] = current_epoch
+			else:
+				# CASE C: Position Changed -> source is CURRENT VISUAL POSITION
+				var current_visual: Vector2 = Interpolator.interpolate_position(
+					st.get("source_px", target_pos),
+					prev_target,
+					float(st.get("alpha", 1.0))
+				)
+				st["source_px"] = current_visual
+				st["target_px"] = target_pos
+				st["alpha"] = 0.0
+				st["last_seen_epoch"] = current_epoch
+
+	# 4. CASE E: Organism Disappearance / Pruning
+	var known_ids: Array = _interpolation_states.keys()
+	for kid in known_ids:
+		if not active_ids.has(kid):
+			_interpolation_states.erase(kid)
+
 	queue_redraw()
+
+func _process(delta: float) -> void:
+	var any_changed: bool = false
+	for org_id in _interpolation_states.keys():
+		var st: Dictionary = _interpolation_states[org_id]
+		var alpha: float = float(st.get("alpha", 1.0))
+		if alpha < 1.0:
+			st["alpha"] = Interpolator.advance_alpha(alpha, delta, INTERPOLATION_DURATION)
+			any_changed = true
+	if any_changed:
+		queue_redraw()
+
+func _get_organism_visual_position(org: Dictionary, fallback_center: Vector2) -> Vector2:
+	var org_id: Variant = org.get("organism_id", "")
+	if _interpolation_states.has(org_id):
+		var st: Dictionary = _interpolation_states[org_id]
+		var source_px: Vector2 = st.get("source_px", fallback_center)
+		var target_px: Vector2 = st.get("target_px", fallback_center)
+		var alpha: float = float(st.get("alpha", 1.0))
+		var base_interp: Vector2 = Interpolator.interpolate_position(source_px, target_px, alpha)
+		var slot_offset: Vector2 = fallback_center - target_px
+		return base_interp + slot_offset
+	return fallback_center
 
 func _draw() -> void:
 	if _cached_organisms.is_empty():
@@ -102,21 +242,32 @@ func _draw() -> void:
 		var origin: Vector2 = Config.world_to_pixel(Vector2i(cell_x, cell_y))
 
 		if count == 1:
-			_draw_organism(group[0], origin + Vector2(8.0, 8.0))
+			var draw_pos: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(8.0, 8.0))
+			_draw_organism(group[0], draw_pos)
 		elif count == 2:
-			_draw_organism(group[0], origin + Vector2(5.0, 8.0))
-			_draw_organism(group[1], origin + Vector2(11.0, 8.0))
+			var pos0: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(5.0, 8.0))
+			var pos1: Vector2 = _get_organism_visual_position(group[1], origin + Vector2(11.0, 8.0))
+			_draw_organism(group[0], pos0)
+			_draw_organism(group[1], pos1)
 		elif count == 3:
-			_draw_organism(group[0], origin + Vector2(5.0, 5.0))
-			_draw_organism(group[1], origin + Vector2(11.0, 5.0))
-			_draw_organism(group[2], origin + Vector2(8.0, 11.0))
+			var pos0: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(5.0, 5.0))
+			var pos1: Vector2 = _get_organism_visual_position(group[1], origin + Vector2(11.0, 5.0))
+			var pos2: Vector2 = _get_organism_visual_position(group[2], origin + Vector2(8.0, 11.0))
+			_draw_organism(group[0], pos0)
+			_draw_organism(group[1], pos1)
+			_draw_organism(group[2], pos2)
 		elif count == 4:
-			_draw_organism(group[0], origin + Vector2(5.0, 5.0))
-			_draw_organism(group[1], origin + Vector2(11.0, 5.0))
-			_draw_organism(group[2], origin + Vector2(5.0, 11.0))
-			_draw_organism(group[3], origin + Vector2(11.0, 11.0))
+			var pos0: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(5.0, 5.0))
+			var pos1: Vector2 = _get_organism_visual_position(group[1], origin + Vector2(11.0, 5.0))
+			var pos2: Vector2 = _get_organism_visual_position(group[2], origin + Vector2(5.0, 11.0))
+			var pos3: Vector2 = _get_organism_visual_position(group[3], origin + Vector2(11.0, 11.0))
+			_draw_organism(group[0], pos0)
+			_draw_organism(group[1], pos1)
+			_draw_organism(group[2], pos2)
+			_draw_organism(group[3], pos3)
 		else:
-			_draw_organism(group[0], origin + Vector2(8.0, 8.0))
+			var draw_pos: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(8.0, 8.0))
+			_draw_organism(group[0], draw_pos)
 			_draw_stack_badge(origin, count - 1)
 
 func _draw_ellipse(pos: Vector2, rx: float, ry: float, color: Color) -> void:
@@ -263,10 +414,10 @@ func _draw_organism(org: Dictionary, center: Vector2) -> void:
 		if is_numeric:
 			p = float(progress_variant)
 			if not is_nan(p) and not is_inf(p) and p >= 0.0 and p <= 1.0:
-				is_valid_p = true
+				is_valid = true
 
-		if not is_valid_p:
-			push_warning("[OrganismsOverlay] Invalid developmental_progress %s for organism %s — omitted arc" % [str(progress_variant), str(org.get("organism_id", "unknown"))])
+		if not is_valid:
+			push_warning("[OrganismsOverlay] Invalid developmental_progress %s for organism %s; omitted arc" % [str(progress_variant), str(org.get("organism_id", "unknown"))])
 		else:
 			if p > 0.0:
 				var arc_r: float = 7.5 * body_scale
