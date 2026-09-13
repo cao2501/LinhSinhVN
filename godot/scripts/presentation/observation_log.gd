@@ -46,6 +46,7 @@ const TYPE_RANKS: Dictionary = {
 
 # Presentation-local observer state
 var _last_diffed_tick: int = -1
+var _has_snapshot_baseline: bool = false
 var _previous_snapshot_map: Dictionary = {}
 var _previous_census: Dictionary = {}
 var _session_epoch: int = 0
@@ -81,6 +82,9 @@ func _ready() -> void:
 
 func get_last_diffed_tick() -> int:
 	return _last_diffed_tick
+
+func has_snapshot_baseline() -> bool:
+	return _has_snapshot_baseline
 
 func get_session_epoch() -> int:
 	return _session_epoch
@@ -172,6 +176,7 @@ func _on_ipc_response_received(response: Dictionary) -> void:
 func _process_reset_snapshot(snapshot: Dictionary, tick: int) -> void:
 	# Invariant: Cross-Reset Diff Isolation
 	# Clear previous snapshot baseline map BEFORE seeding new epoch baseline
+	_has_snapshot_baseline = false
 	_session_epoch += 1
 	_last_diffed_tick = tick
 	_previous_snapshot_map.clear()
@@ -236,6 +241,8 @@ func _process_reset_snapshot(snapshot: Dictionary, tick: int) -> void:
 	else:
 		_previous_census.clear()
 
+	_has_snapshot_baseline = true
+
 func _process_newer_snapshot(snapshot: Dictionary, tick: int) -> void:
 	var organisms_var: Variant = snapshot.get("organisms", [])
 	if typeof(organisms_var) != TYPE_ARRAY:
@@ -246,7 +253,7 @@ func _process_newer_snapshot(snapshot: Dictionary, tick: int) -> void:
 	var candidate_batch: Array = []
 
 	# First snapshot of session (when _previous_snapshot_map is empty and last tick was -1)
-	if _previous_snapshot_map.is_empty():
+	if not _has_snapshot_baseline:
 		var org_ids: Array = current_map.keys()
 		_sort_string_array(org_ids)
 
@@ -274,6 +281,10 @@ func _process_newer_snapshot(snapshot: Dictionary, tick: int) -> void:
 		var census_var: Variant = snapshot.get("census", null)
 		if typeof(census_var) == TYPE_DICTIONARY:
 			_previous_census = (census_var as Dictionary).duplicate(true)
+		else:
+			_previous_census.clear()
+
+		_has_snapshot_baseline = true
 	else:
 		# Subsequent snapshot diff
 		var current_ids: Array = current_map.keys()
@@ -353,40 +364,52 @@ func _process_newer_snapshot(snapshot: Dictionary, tick: int) -> void:
 						"summary": "Organism %s died at tick %d" % [id_str, tick],
 						"details": {"tick": tick}
 					})
+			elif in_prev and not in_curr:
+				# Organism was present and disappeared (e.g. population dropped to empty snapshot)
+				var prev_org: Dictionary = _previous_snapshot_map[id_str]
+				var prev_alive: bool = bool(prev_org.get("is_alive", true))
+				if prev_alive:
+					candidate_batch.append({
+						"category": "SIMULATION",
+						"type": "ORGANISM_DIED",
+						"simulation_tick": tick,
+						"entity_id": id_str,
+						"summary": "Organism %s died at tick %d" % [id_str, tick],
+						"details": {"tick": tick}
+					})
 
 		# 4. Census change check
 		var census_var: Variant = snapshot.get("census", null)
 		if typeof(census_var) == TYPE_DICTIONARY:
 			var current_census: Dictionary = (census_var as Dictionary).duplicate(true)
-			if not _previous_census.is_empty():
-				var c_prev_alive: int = int(_previous_census.get("alive_count", 0))
-				var c_curr_alive: int = int(current_census.get("alive_count", 0))
-				var c_prev_dead: int = int(_previous_census.get("dead_count", 0))
-				var c_curr_dead: int = int(current_census.get("dead_count", 0))
-				var c_prev_total: int = int(_previous_census.get("total_count", 0))
-				var c_curr_total: int = int(current_census.get("total_count", 0))
+			var c_prev_alive: int = int(_previous_census.get("alive_count", 0))
+			var c_curr_alive: int = int(current_census.get("alive_count", 0))
+			var c_prev_dead: int = int(_previous_census.get("dead_count", 0))
+			var c_curr_dead: int = int(current_census.get("dead_count", 0))
+			var c_prev_total: int = int(_previous_census.get("total_count", 0))
+			var c_curr_total: int = int(current_census.get("total_count", 0))
 
-				if c_prev_alive != c_curr_alive or c_prev_dead != c_curr_dead or c_prev_total != c_curr_total:
-					candidate_batch.append({
-						"category": "SIMULATION",
-						"type": "CENSUS_UPDATED",
-						"simulation_tick": tick,
-						"entity_id": "system",
-						"summary": "Census updated at tick %d: %d alive, %d dead, %d total" % [
-							tick,
-							c_curr_alive,
-							c_curr_dead,
-							c_curr_total
-						],
-						"details": {
-							"alive_count": c_curr_alive,
-							"dead_count": c_curr_dead,
-							"total_count": c_curr_total,
-							"prev_alive_count": c_prev_alive,
-							"prev_dead_count": c_prev_dead,
-							"prev_total_count": c_prev_total
-						}
-					})
+			if c_prev_alive != c_curr_alive or c_prev_dead != c_curr_dead or c_prev_total != c_curr_total:
+				candidate_batch.append({
+					"category": "SIMULATION",
+					"type": "CENSUS_UPDATED",
+					"simulation_tick": tick,
+					"entity_id": "system",
+					"summary": "Census updated at tick %d: %d alive, %d dead, %d total" % [
+						tick,
+						c_curr_alive,
+						c_curr_dead,
+						c_curr_total
+					],
+					"details": {
+						"alive_count": c_curr_alive,
+						"dead_count": c_curr_dead,
+						"total_count": c_curr_total,
+						"prev_alive_count": c_prev_alive,
+						"prev_dead_count": c_prev_dead,
+						"prev_total_count": c_prev_total
+					}
+				})
 			_previous_census = current_census
 
 	# Deterministic batch sort
