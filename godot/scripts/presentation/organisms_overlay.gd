@@ -20,6 +20,7 @@ extends Node2D
 
 signal organism_selected(organism_id: String)
 signal organism_hovered(organism_id: String)
+signal epoch_changed(new_epoch: int)
 
 const Config = preload("res://scripts/presentation/demo_world_config.gd")
 const Morphology = preload("res://scripts/presentation/organism_morphology.gd")
@@ -162,6 +163,7 @@ func apply_snapshot_organisms(organisms: Array) -> void:
 		_selected_organism_id = ""
 		_hovered_organism_id = ""
 		organism_selected.emit("")
+		epoch_changed.emit(current_epoch)
 		organism_hovered.emit("")
 		is_epoch_reset = true
 

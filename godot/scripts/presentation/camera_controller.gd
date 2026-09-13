@@ -30,6 +30,7 @@ const FOLLOW_SMOOTH_SPEED: float = 12.0
 
 # Signal constant for selection listening (avoids premature keyword collisions)
 const SIGNAL_SELECTION: String = "organism" + "_selected"
+const SIGNAL_EPOCH: String = "epoch_changed"
 
 @export var organisms_overlay_path: NodePath = NodePath("../OrganismsOverlay")
 
@@ -67,6 +68,8 @@ func _bind_overlay() -> void:
 	if _overlay != null:
 		if _overlay.has_signal(SIGNAL_SELECTION) and not _overlay.is_connected(SIGNAL_SELECTION, _on_selection_changed):
 			_overlay.connect(SIGNAL_SELECTION, _on_selection_changed)
+		if _overlay.has_signal(SIGNAL_EPOCH) and not _overlay.is_connected(SIGNAL_EPOCH, _on_epoch_changed):
+			_overlay.connect(SIGNAL_EPOCH, _on_epoch_changed)
 
 func calculate_default_overview_zoom(vp_size: Vector2) -> float:
 	var margin: float = 48.0
@@ -183,6 +186,17 @@ func _on_selection_changed(new_id: String) -> void:
 					stop_following()
 			else:
 				stop_following()
+
+
+
+# --- Epoch Event Handler ---
+
+func _on_epoch_changed(_new_epoch: int) -> void:
+	stop_following()
+	cancel_focus()
+	_is_dragging = false
+	_drag_start_mouse_pos = Vector2.ZERO
+	reset_to_default_framing()
 
 # --- Frame Processing ---
 

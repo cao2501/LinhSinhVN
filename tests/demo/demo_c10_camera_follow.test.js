@@ -13,7 +13,7 @@
  * - Strict epoch isolation via selection signal
  * - Zero simulation authority, zero IPC, zero duplicate organism interpolation
  * 
- * Covers C10-C01 through C10-C31 specified by Game Director.
+ * Covers C10-C01 through C10-C31 and C10-D01 through C10-D12 specified by Game Director.
  */
 
 import { describe, it } from 'node:test';
@@ -44,10 +44,15 @@ class OrganismsOverlayModel {
     this.cachedOrganisms = [];
     this.interpolationStates = {};
     this.selectionListeners = [];
+    this.epochListeners = [];
   }
 
   connectSelection(listener) {
     this.selectionListeners.push(listener);
+  }
+
+  connectEpoch(listener) {
+    this.epochListeners.push(listener);
   }
 
   selectOrganism(orgId) {
@@ -158,12 +163,15 @@ class OrganismsOverlayModel {
     };
   }
 
-  simulateEpochChange() {
+  simulateEpochChange(newEpoch = 1) {
     this.selectedOrganismId = '';
     this.cachedOrganisms = [];
     this.interpolationStates = {};
     for (const l of this.selectionListeners) {
       l('');
+    }
+    for (const l of this.epochListeners) {
+      l(newEpoch);
     }
   }
 }
@@ -182,8 +190,14 @@ class CameraFollowModel {
     this.focusId = '';
     this.focusStartedAlive = false;
 
+    this.isDragging = false;
+    this.dragStartMousePos = { x: 0, y: 0 };
+
     if (this.overlay) {
       this.overlay.connectSelection(id => this.onSelectionChanged(id));
+      if (this.overlay.connectEpoch) {
+        this.overlay.connectEpoch(epoch => this.onEpochChanged(epoch));
+      }
     }
   }
 
@@ -240,6 +254,29 @@ class CameraFollowModel {
   stopFollowing() {
     this.isTracking = false;
     this.targetId = '';
+  }
+
+  calculateDefaultOverviewZoom(vpSize) {
+    const margin = 48.0;
+    if (vpSize.x <= margin || vpSize.y <= margin) return MIN_ZOOM;
+    const fitX = (vpSize.x - margin) / WORLD_WIDTH;
+    const fitY = (vpSize.y - margin) / WORLD_HEIGHT;
+    const adaptive = Math.min(fitX, fitY);
+    return Math.max(MIN_ZOOM, Math.min(1.2, adaptive));
+  }
+
+  resetToDefaultFraming() {
+    const defZ = this.calculateDefaultOverviewZoom(this.viewportSize);
+    this.zoom = defZ;
+    this.position = this.clampCameraCenter(WORLD_CENTER, this.viewportSize, defZ);
+  }
+
+  onEpochChanged(_newEpoch) {
+    this.stopFollowing();
+    this.cancelFocus();
+    this.isDragging = false;
+    this.dragStartMousePos = { x: 0, y: 0 };
+    this.resetToDefaultFraming();
   }
 
   onSelectionChanged(newId) {
@@ -867,6 +904,248 @@ describe('DEMO-01-C / C-10-C: Organism Focus & Camera Follow Suite', () => {
     assert.ok(camera.position.x > posStart.x, 'Camera moves toward target via Focus smoothing');
     assert.strictEqual(camera.isFocusing, true, 'Focus remains active during transit');
     assert.strictEqual(camera.isTracking, false, 'Follow remains inactive');
+  });
+
+  // =========================================================================
+  // DEMO-01-C / C-10-D: Camera Reset & Epoch Isolation Test Suite
+  // =========================================================================
+
+  // --- C10-D01: Reset while idle ---
+  it('C10-D01: Reset while idle restores/maintains default overview framing and stays in IDLE mode', () => {
+    const overlay = new OrganismsOverlayModel();
+    const camera = new CameraFollowModel(overlay);
+    camera.position = { x: 600.0, y: 600.0 };
+    camera.zoom = 2.5;
+
+    overlay.simulateEpochChange(1);
+
+    const defZ = camera.calculateDefaultOverviewZoom(camera.viewportSize);
+    assert.strictEqual(camera.isTracking, false);
+    assert.strictEqual(camera.isFocusing, false);
+    assert.strictEqual(camera.zoom, defZ, 'Zoom must reset to default overview zoom');
+    assert.strictEqual(camera.position.x, 400.0, 'Position must reset to world center');
+    assert.strictEqual(camera.position.y, 400.0, 'Position must reset to world center');
+  });
+
+  // --- C10-D02: Reset while following ---
+  it('C10-D02: Reset while actively following cancels follow immediately', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_f', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    overlay.selectOrganism('org_f');
+    const camera = new CameraFollowModel(overlay, { x: 400, y: 400 });
+    camera.zoom = 2.0;
+    camera.startFollowing('org_f');
+    assert.strictEqual(camera.isTracking, true);
+
+    // Simulation reset occurs
+    overlay.simulateEpochChange(2);
+
+    assert.strictEqual(camera.isTracking, false, 'Follow must be cancelled on reset');
+    assert.strictEqual(camera.targetId, '', 'targetId must be cleared on reset');
+  });
+
+  // --- C10-D03: Reset while focusing ---
+  it('C10-D03: Reset while actively focusing cancels focus immediately', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_focus', position: { x: 35, y: 35, z: 0 }, is_alive: true }
+    ];
+    overlay.selectOrganism('org_focus');
+    const camera = new CameraFollowModel(overlay, { x: 400, y: 400 });
+    camera.zoom = 2.0;
+    camera.position = { x: 100.0, y: 100.0 };
+    camera.focusOrganism('org_focus');
+    assert.strictEqual(camera.isFocusing, true);
+    assert.strictEqual(camera.focusStartedAlive, true);
+
+    // Frame runs mid-transit
+    camera.process(0.016);
+    assert.strictEqual(camera.isFocusing, true);
+
+    // Simulation reset occurs
+    overlay.simulateEpochChange(2);
+
+    assert.strictEqual(camera.isFocusing, false, 'Focus must be cancelled on reset');
+    assert.strictEqual(camera.focusId, '', 'focusId must be cleared on reset');
+    assert.strictEqual(camera.focusStartedAlive, false, 'focusStartedAlive must be reset');
+  });
+
+  // --- C10-D04: Same organism_id recreated in next epoch ---
+  it('C10-D04: Same organism_id recreated in next epoch guarantees zero auto-follow leakage', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_reused', position: { x: 10, y: 10, z: 0 }, is_alive: true }
+    ];
+    overlay.selectOrganism('org_reused');
+    const camera = new CameraFollowModel(overlay, { x: 400, y: 400 });
+    camera.zoom = 2.0;
+    camera.startFollowing('org_reused');
+    assert.strictEqual(camera.isTracking, true);
+
+    // Epoch resets
+    overlay.simulateEpochChange(2);
+    assert.strictEqual(camera.isTracking, false);
+    assert.strictEqual(camera.targetId, '');
+
+    // Next epoch populates org_reused at a different cell (45, 45)
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_reused', position: { x: 45, y: 45, z: 0 }, is_alive: true }
+    ];
+
+    const posAfterReset = { ...camera.position };
+
+    // Process 30 simulation/presentation frames
+    for (let f = 0; f < 30; f++) {
+      camera.process(0.016);
+    }
+
+    assert.strictEqual(camera.isTracking, false, 'Camera must remain in IDLE mode');
+    assert.strictEqual(camera.targetId, '', 'Camera must not latch onto newly spawned org_reused');
+    assert.strictEqual(camera.position.x, posAfterReset.x, 'Camera must NOT move toward new org_reused');
+    assert.strictEqual(camera.position.y, posAfterReset.y, 'Camera must NOT move toward new org_reused');
+  });
+
+  // --- C10-D05: Follow cannot cross epoch boundary ---
+  it('C10-D05: Follow cannot cross epoch boundary; old target cannot be resumed without explicit selection', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_ep_a', position: { x: 15, y: 15, z: 0 }, is_alive: true }
+    ];
+    overlay.selectOrganism('org_ep_a');
+    const camera = new CameraFollowModel(overlay);
+    camera.startFollowing('org_ep_a');
+
+    overlay.simulateEpochChange(2);
+
+    // Attempting to follow without overlay target validation must fail
+    assert.strictEqual(camera.isTracking, false);
+    assert.strictEqual(overlay.selectedOrganismId, '');
+  });
+
+  // --- C10-D06: Focus cannot cross epoch boundary ---
+  it('C10-D06: Focus cannot cross epoch boundary even if target recreated', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_focus_ep', position: { x: 30, y: 30, z: 0 }, is_alive: true }
+    ];
+    overlay.selectOrganism('org_focus_ep');
+    const camera = new CameraFollowModel(overlay, { x: 400, y: 400 });
+    camera.zoom = 2.0;
+    camera.position = { x: 100.0, y: 100.0 };
+    camera.focusOrganism('org_focus_ep');
+    camera.process(0.016);
+    assert.strictEqual(camera.isFocusing, true);
+
+    // Epoch resets
+    overlay.simulateEpochChange(2);
+    assert.strictEqual(camera.isFocusing, false);
+    assert.strictEqual(camera.focusId, '');
+
+    // org_focus_ep recreated at (40, 40)
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_focus_ep', position: { x: 40, y: 40, z: 0 }, is_alive: true }
+    ];
+
+    const posAfterReset = { ...camera.position };
+    for (let f = 0; f < 30; f++) {
+      camera.process(0.016);
+    }
+
+    assert.strictEqual(camera.isFocusing, false);
+    assert.strictEqual(camera.position.x, posAfterReset.x, 'Camera motion must remain completely halted');
+  });
+
+  // --- C10-D07: Normal deselect preserves framing ---
+  it('C10-D07: Normal deselect preserves camera position and zoom, unlike epoch reset', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_desel', position: { x: 20, y: 20, z: 0 }, is_alive: true }
+    ];
+    overlay.selectOrganism('org_desel');
+    const camera = new CameraFollowModel(overlay, { x: 400, y: 400 });
+    camera.position = { x: 320.0, y: 320.0 };
+    camera.zoom = 2.2;
+    camera.startFollowing('org_desel');
+
+    // Normal deselect click on empty ground
+    overlay.selectOrganism('');
+
+    assert.strictEqual(camera.isTracking, false, 'Follow cancels on deselect');
+    assert.strictEqual(camera.position.x, 320.0, 'Camera position MUST be preserved on normal deselect');
+    assert.strictEqual(camera.position.y, 320.0, 'Camera position MUST be preserved on normal deselect');
+    assert.strictEqual(camera.zoom, 2.2, 'Camera zoom MUST be preserved on normal deselect');
+  });
+
+  // --- C10-D08: Reset clears mouse drag state ---
+  it('C10-D08: Reset clears active mouse drag state and anchor', () => {
+    const overlay = new OrganismsOverlayModel();
+    const camera = new CameraFollowModel(overlay);
+    camera.isDragging = true;
+    camera.dragStartMousePos = { x: 512.0, y: 384.0 };
+
+    overlay.simulateEpochChange(2);
+
+    assert.strictEqual(camera.isDragging, false, 'isDragging must be reset to false');
+    assert.strictEqual(camera.dragStartMousePos.x, 0, 'dragStartMousePos must be cleared');
+    assert.strictEqual(camera.dragStartMousePos.y, 0, 'dragStartMousePos must be cleared');
+  });
+
+  // --- C10-D09: Reset restores canonical default camera position ---
+  it('C10-D09: Reset restores canonical default camera position (WORLD_CENTER)', () => {
+    const overlay = new OrganismsOverlayModel();
+    const camera = new CameraFollowModel(overlay, { x: 1152, y: 648 });
+    camera.position = { x: 750.0, y: 750.0 };
+
+    overlay.simulateEpochChange(2);
+
+    assert.strictEqual(camera.position.x, 400.0, 'Camera center x must be 400');
+    assert.strictEqual(camera.position.y, 400.0, 'Camera center y must be 400');
+  });
+
+  // --- C10-D10: Reset restores canonical default zoom ---
+  it('C10-D10: Reset restores canonical default zoom', () => {
+    const overlay = new OrganismsOverlayModel();
+    const camera = new CameraFollowModel(overlay, { x: 1152, y: 648 });
+    camera.zoom = 3.5;
+
+    overlay.simulateEpochChange(2);
+
+    const expectedZ = camera.calculateDefaultOverviewZoom({ x: 1152, y: 648 });
+    assert.strictEqual(camera.zoom, expectedZ, 'Camera zoom must be default overview zoom');
+  });
+
+  // --- C10-D11: Static safety audit ---
+  it('C10-D11: Static safety audit: CameraController has no SnapshotSynchronizer, IPC, or simulation references', () => {
+    const controllerSource = fs.readFileSync(CONTROLLER_PATH, 'utf8');
+    assert.ok(!controllerSource.includes('SnapshotSynchronizer'), 'CameraController must not reference SnapshotSynchronizer');
+    assert.ok(!controllerSource.includes('IpcClient'), 'CameraController must not reference IpcClient');
+    assert.ok(!controllerSource.includes('get_session_epoch'), 'CameraController must not call get_session_epoch');
+    assert.ok(!controllerSource.includes('get_last_accepted_tick'), 'CameraController must not query tick authority');
+  });
+
+  // --- C10-D12: Multiple sequential epoch transitions ---
+  it('C10-D12: Multiple sequential epoch transitions (N -> N+1 -> N+2) remain isolated', () => {
+    const overlay = new OrganismsOverlayModel();
+    const camera = new CameraFollowModel(overlay, { x: 400, y: 400 });
+
+    for (let epoch = 1; epoch <= 5; epoch++) {
+      overlay.cachedOrganisms = [
+        { organism_id: 'org_ep_' + epoch, position: { x: 20 + epoch, y: 20 + epoch, z: 0 }, is_alive: true }
+      ];
+      overlay.selectOrganism('org_ep_' + epoch);
+      camera.startFollowing('org_ep_' + epoch);
+      assert.strictEqual(camera.isTracking, true);
+
+      // Trigger epoch change
+      overlay.simulateEpochChange(epoch + 1);
+      assert.strictEqual(camera.isTracking, false);
+      assert.strictEqual(camera.targetId, '');
+      assert.strictEqual(camera.isFocusing, false);
+      assert.strictEqual(camera.position.x, 400.0);
+      assert.strictEqual(camera.position.y, 400.0);
+    }
   });
 
   // --- C10-C28: Frozen-domain guard ---
