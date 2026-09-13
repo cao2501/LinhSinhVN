@@ -197,22 +197,27 @@ export function executePopulationBiologicalTick(world, deltaTime, options = {}) 
   }
 
   // -----------------------------------------------------------------
-  // PHASE E: Validation + Atomic Commit
+  // PHASE E: Validation + Atomic Commit (Optional Staged Evaluation)
   // -----------------------------------------------------------------
-  // If any error occurred in Phase D, execution would not reach Phase E.
-  // Commit all updated organism states to PopulationRegistry
-  for (const updatedClone of evaluatedClones) {
-    // Retain object reference or replace in registry
-    const target = popRegistry.getOrganism(updatedClone.organism_id);
-    if (target) {
-      // Overwrite target in-place with validated state clone
-      Object.assign(target, updatedClone);
-    }
+  // If options.commit === false, caller manages staging and atomic commit.
+  // The coordinator performs biological evaluation without mutating authoritative world/pool.
+  if (typeof options.on_candidate_states === 'function') {
+    options.on_candidate_states(evaluatedClones);
   }
 
-  // Commit resource allocation to pool exactly once (no double subtraction)
-  if (activePool && typeof activePool.commitAllocation === 'function') {
-    activePool.commitAllocation(allocationResult);
+  if (options.commit !== false) {
+    // Commit all updated organism states to PopulationRegistry
+    for (const updatedClone of evaluatedClones) {
+      const target = popRegistry.getOrganism(updatedClone.organism_id);
+      if (target) {
+        Object.assign(target, updatedClone);
+      }
+    }
+
+    // Commit resource allocation to pool exactly once (no double subtraction)
+    if (activePool && typeof activePool.commitAllocation === 'function') {
+      activePool.commitAllocation(allocationResult);
+    }
   }
 
   // Single clock ownership: advance clock only if caller does not manage it

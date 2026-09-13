@@ -26,10 +26,14 @@
  * - TC-WORLD-REPRO-22: BreedingSeed remains 100% compatible with closed 05-B contract.
  * - TC-WORLD-REPRO-23: Single clock advance (N -> N+1 exactly once).
  * - TC-WORLD-REPRO-24: 50+ replay runs produce bit-identical offspring IDs, genomes, lineage, and events.
- * - TC-WORLD-REPRO-25: Male contest competition: higher clash_power male wins pairing priority.
- * - TC-WORLD-REPRO-26: Tie-breaking male contest competition on identical clash_power uses organism_id ASC.
- * - TC-WORLD-REPRO-27: Monogamous per-tick mating: mated organisms receive cooldown and cannot mate multiple times.
- * - TC-WORLD-REPRO-28: Event ordering invariant: combined events are canonicalized.
+ * - TC-WORLD-REPRO-25: Reproduction eligibility uses POST-BIOLOGICAL candidate energy/state.
+ * - TC-WORLD-REPRO-26: Species reproduction mode controls pairing semantics.
+ * - TC-WORLD-REPRO-27: Canonical event ordering is insertion-order invariant.
+ * - TC-WORLD-REPRO-28: max_population unlimited representation is valid JSON (null/omitted, never Infinity).
+ * - TC-WORLD-REPRO-29: Male contest competition: higher clash_power male wins pairing priority.
+ * - TC-WORLD-REPRO-30: Tie-breaking male contest competition on identical clash_power uses organism_id ASC.
+ * - TC-WORLD-REPRO-31: Monogamous per-tick mating: mated organisms receive cooldown and cannot mate multiple times within the same tick.
+ * - TC-WORLD-REPRO-32: Failure after reproduction planning leaves world 100% identical to pre-tick.
  */
 
 import { describe, it } from 'node:test';
@@ -40,7 +44,8 @@ import {
   SimulationWorld,
   createSimulationWorld,
   createStaticQuotaEcologyProvider,
-  compareCanonicalEvents
+  compareCanonicalEvents,
+  canonicalizeEvents
 } from '../../game/population/index.js';
 import { loadSpeciesProfile } from '../../game/lifecycle/profile_loader.js';
 import { createOrganismState } from '../../game/lifecycle/organism_state.js';
@@ -144,7 +149,7 @@ function createTestWorld(seed = '0x1234567890abcdef', provider = null) {
   });
 }
 
-describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REPRO-01 -> TC-WORLD-REPRO-28)', () => {
+describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REPRO-01 -> TC-WORLD-REPRO-32)', () => {
 
   it('TC-WORLD-REPRO-01: Single eligible pair mates during world tick, offspring registered in PopulationRegistry', () => {
     const world = createTestWorld();
@@ -262,7 +267,7 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     world.getPopulation().addOrganism(f);
     world.getPopulation().addOrganism(m);
 
-    // Run with 0 food available so nutrition intake is 0 and mating deduction (40.0) is clearly observed
+    // Available resource is 0.0 so no energy intake occurs, clearly observing reproduction deduction (40.0)
     world.advancePopulationTick(1.0, { available_resource: 0.0 });
 
     // Cooldown is set to currentTick (0) + 300 = 300
@@ -271,7 +276,7 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     assert.equal(f.last_reproduction_tick, 0);
     assert.equal(m.last_reproduction_tick, 0);
 
-    // Energy deducted by energy_cost_per_mating (40.0) plus metabolic cost
+    // Energy deducted by energy_cost_per_mating (40.0) plus metabolic drain
     assert.ok(f.nutrition_state.stored_energy <= initialEnergy - 40.0);
     assert.ok(m.nutrition_state.stored_energy <= initialEnergy - 40.0);
   });
@@ -339,7 +344,6 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     assert.equal(f.nutrition_state.stored_energy, 100);
     assert.equal(f.reproduction_cooldown_until_tick, 0);
 
-    // Restore original method
     world.breedingScheduler.runtime.planReproduction = originalPlan;
   });
 
@@ -425,7 +429,6 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
 
     for (const f of files) {
       const rawCode = readFileSync(f, 'utf8');
-      // Strip comments to inspect executable code exclusively
       const code = rawCode.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
       for (const pattern of forbiddenPatterns) {
         assert.equal(
@@ -444,10 +447,8 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     world.getPopulation().addOrganism(f);
     world.getPopulation().addOrganism(m);
 
-    const originalCommit = world.breedingScheduler.runtime.commitReproduction;
-    world.breedingScheduler.runtime.commitReproduction = (plan, p1, p2, prof) => {
-      const res = originalCommit.call(world.breedingScheduler.runtime, plan, p1, p2, prof);
-      // corrupt children array to throw
+    const originalStage = world.breedingScheduler.stageBreedingPhase;
+    world.breedingScheduler.stageBreedingPhase = () => {
       throw new Error('Failure during offspring handling');
     };
 
@@ -457,7 +458,7 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
 
     assert.equal(world.getSimulationTick(), 0);
     assert.equal(world.getPopulation().size, 2);
-    world.breedingScheduler.runtime.commitReproduction = originalCommit;
+    world.breedingScheduler.stageBreedingPhase = originalStage;
   });
 
   it('TC-WORLD-REPRO-14: Rollback after lineage validation failure', () => {
@@ -467,8 +468,8 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     world.getPopulation().addOrganism(f);
     world.getPopulation().addOrganism(m);
 
-    const originalCommit = world.breedingScheduler.runtime.commitReproduction;
-    world.breedingScheduler.runtime.commitReproduction = (plan, p1, p2, prof) => {
+    const originalPlan = world.breedingScheduler.runtime.planReproduction;
+    world.breedingScheduler.runtime.planReproduction = () => {
       throw new Error('Lineage validation rejected');
     };
 
@@ -478,22 +479,19 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
 
     assert.equal(world.getSimulationTick(), 0);
     assert.equal(world.getPopulation().size, 2);
-    world.breedingScheduler.runtime.commitReproduction = originalCommit;
+    world.breedingScheduler.runtime.planReproduction = originalPlan;
   });
 
   it('TC-WORLD-REPRO-15: Dead population does not consume population capacity', () => {
     const world = createTestWorld();
-    // 5 dead organisms
     for (let i = 0; i < 5; i++) {
       world.getPopulation().addOrganism(createAdultOrganism(`org_dead_${i}`, 'MALE', { is_alive: false }));
     }
-    // 2 alive adults
     const f = createAdultOrganism('org_f', 'FEMALE');
     const m = createAdultOrganism('org_m', 'MALE');
     world.getPopulation().addOrganism(f);
     world.getPopulation().addOrganism(m);
 
-    // Max alive capacity: 50. Total organisms: 5 dead + 2 alive + ~25 born = ~32 <= 50.
     const result = world.advancePopulationTick(1.0, {
       available_resource: 200.0,
       max_population: 50
@@ -501,22 +499,18 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
 
     assert.equal(result.reproduction.pairs_mated, 1);
     assert.ok(result.reproduction.offspring_born > 0);
-    // Living count includes 2 parents + offspring, dead count remains 5
     assert.equal(world.getPopulation().countDead(), 5);
     assert.equal(world.getPopulation().countLiving(), 2 + result.reproduction.offspring_born);
   });
 
   it('TC-WORLD-REPRO-16: Capacity uses alive count (counts.alive)', () => {
     const world = createTestWorld();
-    // 20 dead organisms
     for (let i = 0; i < 20; i++) {
       world.getPopulation().addOrganism(createAdultOrganism(`org_dead_${i}`, 'MALE', { is_alive: false }));
     }
-    // 2 alive adults
     world.getPopulation().addOrganism(createAdultOrganism('org_f', 'FEMALE'));
     world.getPopulation().addOrganism(createAdultOrganism('org_m', 'MALE'));
 
-    // Cap at 2 alive: mating suppressed even though dead count is 20
     const result = world.advancePopulationTick(1.0, {
       available_resource: 200.0,
       max_population: 2
@@ -532,8 +526,6 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     world.getPopulation().addOrganism(createAdultOrganism('org_f', 'FEMALE'));
     world.getPopulation().addOrganism(createAdultOrganism('org_m', 'MALE'));
 
-    // Capacity allows exactly 10 total alive. Clutch size is 15-45.
-    // 2 + clutch > 10, so pair must be rejected completely (no partial 8 eggs born).
     const result = world.advancePopulationTick(1.0, {
       available_resource: 200.0,
       max_population: 10
@@ -563,7 +555,6 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     world.getPopulation().addOrganism(f);
     world.getPopulation().addOrganism(m);
 
-    // Corrupt one organism species_id directly in the map
     const target = world.getPopulation().getOrganism('org_f');
     target.species_id = 'alien_beetle_unknown';
 
@@ -582,10 +573,8 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     const result = world.advancePopulationTick(1.0, { available_resource: 200.0 });
     const born = result.reproduction.offspring_born;
 
-    // Newborns appear in census
     assert.equal(result.census.counts.alive, 2 + born);
 
-    // Newborns have age 0
     const newborns = world.getPopulation().listOrganisms().filter(o => o.current_stage_id === 'STAGE_EGG');
     assert.equal(newborns.length, born);
     for (const nb of newborns) {
@@ -599,15 +588,12 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     world.getPopulation().addOrganism(createAdultOrganism('org_f', 'FEMALE'));
     world.getPopulation().addOrganism(createAdultOrganism('org_m', 'MALE'));
 
-    // Tick 0 -> reproduction happens, newborns created
     world.advancePopulationTick(1.0, { available_resource: 200.0 });
 
-    // Tick 1 -> newborns are in the cohort and receive biological tick
     const result2 = world.advancePopulationTick(1.0, { available_resource: 200.0 });
     const eggResults = result2.organism_results.filter(r => r.current_stage_id === 'STAGE_EGG');
     assert.ok(eggResults.length > 0, 'Newborns must receive biological evaluation at tick 1');
 
-    // In tick 1, eggs accumulated 1 tick of age
     const newborns = world.getPopulation().listOrganisms().filter(o => o.current_stage_id === 'STAGE_EGG');
     for (const nb of newborns) {
       assert.equal(nb.stage_age_ticks, 1);
@@ -624,7 +610,6 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     const result = world.advancePopulationTick(1.0, { available_resource: 200.0 });
     assert.equal(result.reproduction.pairs_mated, 1);
 
-    // Breeding seed format
     const breedingSeed = result.reproduction.lineage_records[0].breeding_seed;
     assert.ok(breedingSeed.startsWith('0x'));
     assert.equal(breedingSeed.length, 18);
@@ -670,9 +655,97 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     }
   });
 
-  it('TC-WORLD-REPRO-25: Male contest competition: higher clash_power male wins pairing priority', () => {
+  it('TC-WORLD-REPRO-25: Reproduction eligibility uses POST-BIOLOGICAL candidate energy/state', () => {
     const world = createTestWorld();
-    // 1 female, 2 males: male B has higher clash power
+    // Pre-tick energy = 40.5. Reproduction cost is 40.0.
+    // In tick N without food (available_resource: 0), biological tick uses ~0.82 basal energy.
+    // Candidate energy becomes ~39.68 < 40.0.
+    // Therefore, organism is INELIGIBLE for reproduction!
+    const f = createAdultOrganism('org_f', 'FEMALE', { energy: 40.5 });
+    const m = createAdultOrganism('org_m', 'MALE', { energy: 120.0 });
+    world.getPopulation().addOrganism(f);
+    world.getPopulation().addOrganism(m);
+
+    const result = world.advancePopulationTick(1.0, { available_resource: 0.0 });
+
+    // Pre-tick energy was > 40, but post-biological candidate energy is < 40
+    assert.equal(result.reproduction.pairs_mated, 0, 'Post-biological energy deficit must prevent mating');
+    assert.equal(result.reproduction.offspring_born, 0);
+  });
+
+  it('TC-WORLD-REPRO-26: Species reproduction mode controls pairing semantics', () => {
+    const world = createTestWorld();
+    const f = createAdultOrganism('org_f', 'FEMALE');
+    const m = createAdultOrganism('org_m', 'MALE');
+    world.getPopulation().addOrganism(f);
+    world.getPopulation().addOrganism(m);
+
+    // Profile specifies POLYGYNOUS_SCRAMBLE_AND_CONTEST
+    assert.equal(profile.reproduction_profile.mating_system, 'POLYGYNOUS_SCRAMBLE_AND_CONTEST');
+    const result = world.advancePopulationTick(1.0, { available_resource: 200.0 });
+    assert.equal(result.reproduction.pairs_mated, 1);
+
+    // Test unsupported mating system throws
+    const invalidProfile = JSON.parse(JSON.stringify(profile));
+    invalidProfile.species_id = 'custom_invalid_system';
+    invalidProfile.reproduction_profile.mating_system = 'UNSUPPORTED_SYSTEM_XYZ';
+    world.registerSpeciesProfile(invalidProfile);
+
+    const fInvalid = createAdultOrganism('org_f_inv', 'FEMALE', { profile: invalidProfile });
+    const mInvalid = createAdultOrganism('org_m_inv', 'MALE', { profile: invalidProfile });
+    fInvalid.species_id = 'custom_invalid_system';
+    mInvalid.species_id = 'custom_invalid_system';
+
+    const candidates = [fInvalid, mInvalid];
+    assert.throws(() => {
+      world.breedingScheduler.stageBreedingPhase(candidates, world.speciesRegistry, 1, '0x1234567890abcdef');
+    }, /Unsupported mating_system/);
+  });
+
+  it('TC-WORLD-REPRO-27: Canonical event ordering is insertion-order invariant', () => {
+    const evt1 = { simulation_tick: 1, organism_id: 'org_a', deterministic_order_index: 0, event_id: 'evt_1' };
+    const evt2 = { simulation_tick: 1, organism_id: 'org_a', deterministic_order_index: 1, event_id: 'evt_2' };
+    const evt3 = { simulation_tick: 1, organism_id: 'org_b', deterministic_order_index: 0, event_id: 'evt_3' };
+    const evt4 = { simulation_tick: 2, organism_id: 'org_a', deterministic_order_index: 0, event_id: 'evt_4' };
+
+    const orderA = [evt4, evt2, evt1, evt3];
+    const orderB = [evt1, evt3, evt4, evt2];
+    const orderC = [evt3, evt1, evt2, evt4];
+
+    const sortedA = canonicalizeEvents(orderA);
+    const sortedB = canonicalizeEvents(orderB);
+    const sortedC = canonicalizeEvents(orderC);
+
+    assert.deepEqual(sortedA, sortedB);
+    assert.deepEqual(sortedB, sortedC);
+    assert.equal(sortedA[0].event_id, 'evt_1');
+    assert.equal(sortedA[1].event_id, 'evt_2');
+    assert.equal(sortedA[2].event_id, 'evt_3');
+    assert.equal(sortedA[3].event_id, 'evt_4');
+  });
+
+  it('TC-WORLD-REPRO-28: max_population unlimited representation is valid JSON (null/omitted, never Infinity)', () => {
+    const world = createTestWorld();
+    world.getPopulation().addOrganism(createAdultOrganism('org_f', 'FEMALE'));
+    world.getPopulation().addOrganism(createAdultOrganism('org_m', 'MALE'));
+
+    // Test with max_population: null
+    const result = world.advancePopulationTick(1.0, {
+      available_resource: 200.0,
+      max_population: null
+    });
+
+    const jsonString = JSON.stringify(result);
+    assert.ok(!jsonString.includes('Infinity'), 'Output JSON must never serialize Infinity');
+    assert.ok(!jsonString.includes('NaN'), 'Output JSON must never serialize NaN');
+
+    const parsed = JSON.parse(jsonString);
+    assert.equal(parsed.schema_version, '1.0.0');
+    assert.equal(parsed.reproduction.pairs_mated, 1);
+  });
+
+  it('TC-WORLD-REPRO-29: Male contest competition: higher clash_power male wins pairing priority', () => {
+    const world = createTestWorld();
     const female = createAdultOrganism('org_f', 'FEMALE');
     const maleLow = createAdultOrganism('org_m_low', 'MALE', { clashPower: 50 });
     const maleHigh = createAdultOrganism('org_m_high', 'MALE', { clashPower: 150 });
@@ -690,9 +763,8 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     assert.equal(maleLow.reproduction_cooldown_until_tick, 0);
   });
 
-  it('TC-WORLD-REPRO-26: Tie-breaking male contest competition on identical clash_power uses organism_id ASC', () => {
+  it('TC-WORLD-REPRO-30: Tie-breaking male contest competition on identical clash_power uses organism_id ASC', () => {
     const world = createTestWorld();
-    // 1 female, 2 males with identical clash power: 'org_m_alpha' < 'org_m_beta'
     const female = createAdultOrganism('org_f', 'FEMALE');
     const maleAlpha = createAdultOrganism('org_m_alpha', 'MALE', { clashPower: 100 });
     const maleBeta = createAdultOrganism('org_m_beta', 'MALE', { clashPower: 100 });
@@ -709,9 +781,8 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     assert.equal(maleBeta.reproduction_cooldown_until_tick, 0);
   });
 
-  it('TC-WORLD-REPRO-27: Monogamous per-tick mating: mated organisms receive cooldown and cannot mate multiple times', () => {
+  it('TC-WORLD-REPRO-31: Monogamous per-tick mating: mated organisms receive cooldown and cannot mate multiple times within the same tick', () => {
     const world = createTestWorld();
-    // 2 females, 1 male
     const f1 = createAdultOrganism('org_f1', 'FEMALE');
     const f2 = createAdultOrganism('org_f2', 'FEMALE');
     const m = createAdultOrganism('org_m', 'MALE');
@@ -721,25 +792,35 @@ describe('Population-Level Reproduction & World Breeding Scheduler (TC-WORLD-REP
     world.getPopulation().addOrganism(m);
 
     const result = world.advancePopulationTick(1.0, { available_resource: 200.0 });
-    // Only 1 pair mated because male can only mate once per tick
     assert.equal(result.reproduction.pairs_mated, 1);
     assert.equal(m.reproduction_cooldown_until_tick, 300);
   });
 
-  it('TC-WORLD-REPRO-28: Event ordering invariant: combined events are canonicalized', () => {
+  it('TC-WORLD-REPRO-32: Failure after reproduction planning leaves world 100% identical to pre-tick', () => {
     const world = createTestWorld();
-    world.getPopulation().addOrganism(createAdultOrganism('org_f', 'FEMALE'));
-    world.getPopulation().addOrganism(createAdultOrganism('org_m', 'MALE'));
+    const f = createAdultOrganism('org_f', 'FEMALE', { energy: 120 });
+    const m = createAdultOrganism('org_m', 'MALE', { energy: 120 });
+    world.getPopulation().addOrganism(f);
+    world.getPopulation().addOrganism(m);
 
-    const result = world.advancePopulationTick(1.0, { available_resource: 200.0 });
-    const events = result.events;
+    const snapshotBefore = JSON.stringify(world.snapshot());
 
-    assert.ok(events.length > 0);
-    // Verify strictly ascending canonical order
-    for (let i = 0; i < events.length - 1; i++) {
-      const cmp = compareCanonicalEvents(events[i], events[i + 1]);
-      assert.ok(cmp <= 0, `Events at ${i} and ${i + 1} not in canonical order!`);
-    }
+    // Inject failure after reproduction planning but before commit (e.g. invalid ecology feedback)
+    const originalFeedback = world.getEcologyProvider().applyFeedback;
+    world.getEcologyProvider().applyFeedback = () => {
+      throw new Error('Ecology feedback failure after planning');
+    };
+
+    assert.throws(() => {
+      world.advancePopulationTick(1.0, { available_resource: 200.0 });
+    }, /Ecology feedback failure after planning/);
+
+    // Entire world state is identical to pre-tick state
+    assert.equal(JSON.stringify(world.snapshot()), snapshotBefore);
+    assert.equal(world.getSimulationTick(), 0);
+    assert.equal(world.getPopulation().size, 2);
+
+    world.getEcologyProvider().applyFeedback = originalFeedback;
   });
 
 });

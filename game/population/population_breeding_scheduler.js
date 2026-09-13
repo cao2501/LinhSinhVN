@@ -3,11 +3,15 @@
  *
  * Implements deterministic population-level reproduction coordination:
  * 1. Filter eligible adult candidates from post-biological candidate states.
- * 2. Form deterministic mating pairs (Contest & Scramble competition semantics:
- *    males sorted by derivedStats.clash_power DESC then organism_id ASC;
- *    females sorted by organism_id ASC).
+ * 2. Form deterministic mating pairs driven by speciesProfile.reproduction_profile.mating_system.
+ *    - POLYGYNOUS_SCRAMBLE_AND_CONTEST:
+ *      Males compete via contest competition (derivedStats.clash_power DESC, tie-break organism_id ASC).
+ *      Females sorted by organism_id ASC.
+ *      1-to-1 pairing per discrete tick (immediate post-mating cooldown of e.g. 300 ticks enforces
+ *      at most one mating event per individual per tick; polygyny is realized across consecutive/subsequent
+ *      ticks as cooldowns expire).
  * 3. Enforce Whole-Clutch Admission against ALIVE-based population capacity (counts.alive).
- * 4. Coordinate atomic plan and commit with ReproductionRuntime.
+ * 4. Staged candidate reproduction generation with ZERO mutation to authoritative world state.
  *
  * Zero nondeterministic APIs (pure deterministic hash-based derivations).
  */
@@ -15,6 +19,7 @@
 import { ReproductionRuntime } from '../reproduction/reproduction_runtime.js';
 import { hash64 } from '../reproduction/seed_derivation.js';
 import { canonicalizeEvents } from './event_canonicalizer.js';
+import { validateReproductionDeltas } from '../lifecycle/organism_state.js';
 
 /**
  * Pure candidate filter for reproduction eligibility.
@@ -91,13 +96,15 @@ export function filterReproductionCandidates(organisms, speciesRegistry, current
 }
 
 /**
- * Forms deterministic mating pairs from eligible candidates.
+ * Forms deterministic mating pairs from eligible candidates driven by speciesProfile.
  *
- * Sorting rules:
- * - Grouped by species_id.
- * - Males: sorted by derivedStats.clash_power DESC, tie-break organism_id ASC.
- * - Females: sorted by organism_id ASC.
- * - Paired 1-1 up to min(females.length, males.length).
+ * Mating systems:
+ * - POLYGYNOUS_SCRAMBLE_AND_CONTEST:
+ *   Males: sorted by derivedStats.clash_power DESC, tie-break organism_id ASC.
+ *   Females: sorted by organism_id ASC.
+ *   Paired 1-to-1 per tick up to min(females.length, males.length).
+ * - MONOGAMOUS:
+ *   Paired 1-to-1.
  *
  * @param {Array<object>} candidates - Array of eligible candidate organisms
  * @param {object} speciesRegistry - SpeciesRegistry instance
@@ -118,40 +125,62 @@ export function formDeterministicPairs(candidates, speciesRegistry, tickSeed) {
   const pairs = [];
 
   for (const spId of sortedSpeciesIds) {
+    const speciesProfile = speciesRegistry.get(spId);
+    if (!speciesProfile) {
+      throw new Error(`Unknown species profile for species_id '${spId}'`);
+    }
+
+    const matingSystem = speciesProfile.reproduction_profile?.mating_system || 'POLYGYNOUS_SCRAMBLE_AND_CONTEST';
     const group = speciesGroups.get(spId);
     const females = group.filter(org => org.sex === 'FEMALE');
     const males = group.filter(org => org.sex === 'MALE');
 
-    // Sort males: clash_power DESC, organism_id ASC
-    males.sort((a, b) => {
-      const powerA = typeof a.derivedStats?.clash_power === 'number' ? a.derivedStats.clash_power : 0;
-      const powerB = typeof b.derivedStats?.clash_power === 'number' ? b.derivedStats.clash_power : 0;
-      if (powerB !== powerA) {
-        return powerB - powerA;
-      }
-      const idA = String(a.organism_id || '');
-      const idB = String(b.organism_id || '');
-      if (idA < idB) return -1;
-      if (idA > idB) return 1;
-      return 0;
-    });
-
-    // Sort females: organism_id ASC
-    females.sort((a, b) => {
-      const idA = String(a.organism_id || '');
-      const idB = String(b.organism_id || '');
-      if (idA < idB) return -1;
-      if (idA > idB) return 1;
-      return 0;
-    });
-
-    const pairCount = Math.min(females.length, males.length);
-    for (let i = 0; i < pairCount; i++) {
-      pairs.push({
-        female: females[i],
-        male: males[i],
-        species_id: spId
+    if (matingSystem === 'POLYGYNOUS_SCRAMBLE_AND_CONTEST') {
+      // Contest competition for males: clash_power DESC, tie-break organism_id ASC
+      males.sort((a, b) => {
+        const powerA = typeof a.derivedStats?.clash_power === 'number' ? a.derivedStats.clash_power : 0;
+        const powerB = typeof b.derivedStats?.clash_power === 'number' ? b.derivedStats.clash_power : 0;
+        if (powerB !== powerA) {
+          return powerB - powerA;
+        }
+        const idA = String(a.organism_id || '');
+        const idB = String(b.organism_id || '');
+        if (idA < idB) return -1;
+        if (idA > idB) return 1;
+        return 0;
       });
+
+      // Female selection / scramble: organism_id ASC
+      females.sort((a, b) => {
+        const idA = String(a.organism_id || '');
+        const idB = String(b.organism_id || '');
+        if (idA < idB) return -1;
+        if (idA > idB) return 1;
+        return 0;
+      });
+
+      // 1-to-1 mating per tick: individual cooldowns prevent multiple matings per tick
+      const pairCount = Math.min(females.length, males.length);
+      for (let i = 0; i < pairCount; i++) {
+        pairs.push({
+          female: females[i],
+          male: males[i],
+          species_id: spId
+        });
+      }
+    } else if (matingSystem === 'MONOGAMOUS') {
+      males.sort((a, b) => String(a.organism_id || '').localeCompare(String(b.organism_id || '')));
+      females.sort((a, b) => String(a.organism_id || '').localeCompare(String(b.organism_id || '')));
+      const pairCount = Math.min(females.length, males.length);
+      for (let i = 0; i < pairCount; i++) {
+        pairs.push({
+          female: females[i],
+          male: males[i],
+          species_id: spId
+        });
+      }
+    } else {
+      throw new Error(`Unsupported mating_system: '${matingSystem}' in species '${spId}'`);
     }
   }
 
@@ -265,20 +294,23 @@ export class PopulationBreedingScheduler {
   }
 
   /**
-   * Orchestrates the complete reproduction phase for a simulation world tick.
+   * STAGE ONLY: Plans reproduction phase on post-biological candidate states.
+   * Performs ZERO mutation on authoritative PopulationRegistry or organism states.
    *
-   * @param {object} world - SimulationWorld instance
+   * @param {Array<object>|Map<string, object>} candidateOrganisms - Post-biological candidate organism states
+   * @param {object} speciesRegistry - SpeciesRegistry instance
    * @param {number} currentTick - Current simulation tick
    * @param {string} tickSeed - Deterministic tick seed
    * @param {object} [options={}] - Options (max_population, reproduction_enabled, birth_habitat)
    * @returns {{
    *   summary: object,
-   *   children: Array<object>,
-   *   lineageRecords: Array<object>,
-   *   events: Array<object>
+   *   stagedPlans: Array<object>,
+   *   stagedChildren: Array<object>,
+   *   stagedLineages: Array<object>,
+   *   stagedEvents: Array<object>
    * }}
    */
-  executeBreedingPhase(world, currentTick, tickSeed, options = {}) {
+  stageBreedingPhase(candidateOrganisms, speciesRegistry, currentTick, tickSeed, options = {}) {
     if (options.reproduction_enabled === false) {
       return {
         summary: Object.freeze({
@@ -291,20 +323,28 @@ export class PopulationBreedingScheduler {
           lineage_records: Object.freeze([]),
           rejected_pairs: Object.freeze([])
         }),
-        children: [],
-        lineageRecords: [],
-        events: []
+        stagedPlans: [],
+        stagedChildren: [],
+        stagedLineages: [],
+        stagedEvents: []
       };
     }
 
-    const registry = world.getPopulation();
-    const speciesRegistry = world.speciesRegistry;
-    const currentAliveCount = registry.countLiving();
+    const candidateList = candidateOrganisms instanceof Map
+      ? Array.from(candidateOrganisms.values())
+      : (Array.isArray(candidateOrganisms) ? candidateOrganisms : []);
+
+    // Calculate alive count from post-biological candidate states
+    let currentAliveCount = 0;
+    for (const org of candidateList) {
+      if (org.is_alive === true) currentAliveCount++;
+    }
+
     const maxPopulation = options.max_population !== undefined ? options.max_population : null;
     const birthHabitat = options.birth_habitat || 'habitat_default';
 
-    // 1. Filter candidates from current post-biological registry states
-    const candidates = filterReproductionCandidates(registry.listOrganisms(), speciesRegistry, currentTick);
+    // 1. Filter candidates from post-biological candidate states
+    const candidates = filterReproductionCandidates(candidateList, speciesRegistry, currentTick);
 
     // 2. Form deterministic pairs
     const pairs = formDeterministicPairs(candidates, speciesRegistry, tickSeed);
@@ -320,23 +360,24 @@ export class PopulationBreedingScheduler {
       birthHabitat
     });
 
-    // 4. Commit admitted plans
+    // 4. Preflight validate all admitted plans and extract staged objects (ZERO registry mutation!)
     const allChildren = [];
     const allLineages = [];
     const allEvents = [];
 
     for (const item of admittedPlans) {
       const { pair, speciesProfile, plan } = item;
-      const commitResult = this._runtime.commitReproduction(plan, pair.female, pair.male, speciesProfile);
 
-      for (const child of commitResult.children) {
-        registry.addOrganism(child);
-        allChildren.push(child);
+      // Preflight validate parent deltas against candidate states
+      validateReproductionDeltas(pair.female, plan.parent_deltas.parent_a, speciesProfile);
+      validateReproductionDeltas(pair.male, plan.parent_deltas.parent_b, speciesProfile);
+
+      // Collect staged children and lineages from the plan
+      for (const cp of plan.children_plans) {
+        allChildren.push(cp.initial_organism_state);
+        allLineages.push(cp.lineage_record);
       }
-      for (const lin of commitResult.lineage_records) {
-        allLineages.push(lin);
-      }
-      for (const ev of commitResult.events) {
+      for (const ev of plan.events) {
         allEvents.push(ev);
       }
     }
@@ -356,9 +397,35 @@ export class PopulationBreedingScheduler {
 
     return {
       summary,
-      children: allChildren,
-      lineageRecords: allLineages,
-      events: allEvents
+      stagedPlans: admittedPlans,
+      stagedChildren: allChildren,
+      stagedLineages: allLineages,
+      stagedEvents: allEvents
+    };
+  }
+
+  /**
+   * Backwards-compatible execution helper.
+   */
+  executeBreedingPhase(world, currentTick, tickSeed, options = {}) {
+    const staged = this.stageBreedingPhase(
+      world.getPopulation().listOrganisms(),
+      world.speciesRegistry,
+      currentTick,
+      tickSeed,
+      options
+    );
+
+    // If caller explicitly wants executeBreedingPhase to commit immediately
+    for (const child of staged.stagedChildren) {
+      world.getPopulation().addOrganism(child);
+    }
+
+    return {
+      summary: staged.summary,
+      children: staged.stagedChildren,
+      lineageRecords: staged.stagedLineages,
+      events: staged.stagedEvents
     };
   }
 }
