@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://dm01c02worldview"]
+[gd_scene load_steps=9 format=3 uid="uid://dm01c02worldview"]
 
 [ext_resource type="Script" path="res://scripts/presentation/world_view.gd" id="1_world_view"]
 [ext_resource type="Script" path="res://scripts/presentation/world_grid_canvas.gd" id="2_grid_canvas"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" path="res://scripts/ipc/ipc_client.gd" id="5_ipc_client"]
 [ext_resource type="Script" path="res://scripts/presentation/snapshot_synchronizer.gd" id="6_snapshot_synchronizer"]
 [ext_resource type="Script" path="res://scripts/presentation/presentation_controls.gd" id="7_presentation_controls"]
+[ext_resource type="Script" path="res://scripts/presentation/observation_log.gd" id="8_observation_log"]
 
 [node name="WorldView" type="Node2D"]
 script = ExtResource("1_world_view")
@@ -108,5 +109,48 @@ text = "Z ▼"
 [node name="ZUpButton" type="Button" parent="UI/PresentationControls/MarginContainer/HBoxContainer/ZControls"]
 layout_mode = 2
 text = "Z ▲"
+
+[node name="ObservationLog" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -340.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = 260.0
+grow_horizontal = 0
+script = ExtResource("8_observation_log")
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/ObservationLog"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UI/ObservationLog/MarginContainer"]
+layout_mode = 2
+
+[node name="Header" type="HBoxContainer" parent="UI/ObservationLog/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="UI/ObservationLog/MarginContainer/VBoxContainer/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Observation Log"
+
+[node name="ClearButton" type="Button" parent="UI/ObservationLog/MarginContainer/VBoxContainer/Header"]
+layout_mode = 2
+text = "Clear"
+
+[node name="ScrollContainer" type="ScrollContainer" parent="UI/ObservationLog/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="LogList" type="VBoxContainer" parent="UI/ObservationLog/MarginContainer/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
 
 [connection signal="z_layer_changed" from="." to="OrganismsOverlay" method="set_active_z_layer"]
