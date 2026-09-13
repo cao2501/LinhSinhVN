@@ -87,14 +87,16 @@ static func format_observation_text(entry: Dictionary) -> String:
 	var summary: String = String(entry.get("summary", ""))
 	var seq_id: int = int(entry.get("sequence_id", 0))
 
-	# Format tick representation
+	# Strict presentation tick representation (TYPE_INT and >= 0 only; float/negative/string/null -> "—")
 	var tick_str: String = "—"
-	if tick_val != null and (typeof(tick_val) == TYPE_INT or typeof(tick_val) == TYPE_FLOAT):
+	if tick_val != null and typeof(tick_val) == TYPE_INT and int(tick_val) >= 0:
 		tick_str = "T%d" % int(tick_val)
 
-	# Reset visual demarcation banner (single row decoration, zero fake entries)
+	# Reset visual demarcation banner: preserves verbatim summary
 	if obs_type == "SIMULATION_RESET":
-		return "=== EPOCH %d RESET | TICK %s ===" % [epoch, tick_str]
+		if summary.is_empty():
+			return "=== EPOCH %d RESET | TICK %s ===" % [epoch, tick_str]
+		return "=== EPOCH %d RESET | TICK %s === %s" % [epoch, tick_str, summary]
 
 	# Category badge lookup (SIMULATION -> [SIM], PLAYBACK -> [PLAY], TRANSPORT -> [NET], VIEW -> [VIEW])
 	var cat_str: String = String(entry.get("category", "SIMULATION"))

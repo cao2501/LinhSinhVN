@@ -61,11 +61,14 @@ class ObservationLogUIModel {
     const summary = String(entry.summary || '');
     const seqId = Number(entry.sequence_id || 0);
     let tickStr = '—';
-    if (tickVal !== null && tickVal !== undefined && Number.isInteger(tickVal)) {
+    if (tickVal !== null && tickVal !== undefined && typeof tickVal === 'number' && Number.isInteger(tickVal) && tickVal >= 0) {
       tickStr = `T${tickVal}`;
     }
     if (obsType === 'SIMULATION_RESET') {
-      return `=== EPOCH ${epoch} RESET | TICK ${tickStr} ===`;
+      if (!summary) {
+        return `=== EPOCH ${epoch} RESET | TICK ${tickStr} ===`;
+      }
+      return `=== EPOCH ${epoch} RESET | TICK ${tickStr} === ${summary}`;
     }
     const catStr = String(entry.category || 'SIMULATION');
     const badge = this.categoryBadges[catStr] || `[${catStr}]`;
@@ -189,7 +192,7 @@ test('C07-07: Reset Epoch Banner Rendering', () => {
   const resetEntry = makeSampleEntry(5, 2, 0, 'SIMULATION', 'SIMULATION_RESET', 'Simulation reset to tick 0 (Epoch 2)');
   ui.onObservationAppended(resetEntry);
   const text = ui.getRowText(0);
-  assert.equal(text, '=== EPOCH 2 RESET | TICK T0 ===', 'Reset row must be decorated as epoch demarcation banner');
+  assert.equal(text, '=== EPOCH 2 RESET | TICK T0 === Simulation reset to tick 0 (Epoch 2)', 'Reset row must be decorated as epoch demarcation banner preserving verbatim summary');
 });
 test('C07-08: Ring Buffer 100 Bounds', () => {
   const ui = new ObservationLogUIModel();
@@ -380,4 +383,78 @@ test('C07-25: Zero Second Ring Buffer Proof', () => {
   assert.ok(!content.includes('_observation_ring'), 'ObservationLogUI must not maintain an internal _observation_ring');
   assert.ok(!content.includes('pop_front()'), 'ObservationLogUI must not pop from a ring');
   assert.ok(!content.includes('add_child('), 'ObservationLogUI must not add row children (C-06 is sole row creator)');
+});
+
+// ==========================================
+// C-07 PATCH-01 REGRESSION TESTS (C07-26..33)
+// ==========================================
+
+test('C07-26: SIMULATION_RESET preserves summary verbatim', () => {
+  const ui = new ObservationLogUIModel();
+  const verbatimSummary = 'Authoritative Reset: Epoch 3 initialized with 12 organisms!';
+  const resetEntry = makeSampleEntry(99, 3, 0, 'SIMULATION', 'SIMULATION_RESET', verbatimSummary);
+
+  ui.onObservationAppended(resetEntry);
+
+  const text = ui.getRowText(0);
+  assert.equal(text, `=== EPOCH 3 RESET | TICK T0 === ${verbatimSummary}`);
+  assert.ok(text.endsWith(verbatimSummary), 'Must end with exact verbatim summary');
+});
+
+test('C07-27: SIMULATION_RESET with empty summary remains valid', () => {
+  const ui = new ObservationLogUIModel();
+  const resetEntry = makeSampleEntry(100, 4, 0, 'SIMULATION', 'SIMULATION_RESET', '');
+
+  ui.onObservationAppended(resetEntry);
+
+  const text = ui.getRowText(0);
+  assert.equal(text, '=== EPOCH 4 RESET | TICK T0 ===', 'Empty summary produces clean banner without trailing space');
+});
+
+test('C07-28: Integer tick displays T<number>', () => {
+  const ui = new ObservationLogUIModel();
+  const entry = makeSampleEntry(1, 0, 15, 'SIMULATION', 'ORGANISM_APPEARED', 'test');
+  ui.onObservationAppended(entry);
+  assert.ok(ui.getRowText(0).includes('T15'));
+});
+
+test('C07-29: Float tick displays —', () => {
+  const ui = new ObservationLogUIModel();
+  const entry = makeSampleEntry(1, 0, 5.5, 'SIMULATION', 'ORGANISM_APPEARED', 'test');
+  ui.onObservationAppended(entry);
+  assert.ok(ui.getRowText(0).includes('—'), 'Float tick must not be coerced to integer; displays —');
+  assert.ok(!ui.getRowText(0).includes('T5'));
+});
+
+test('C07-30: Negative tick displays —', () => {
+  const ui = new ObservationLogUIModel();
+  const entry = makeSampleEntry(1, 0, -1, 'SIMULATION', 'ORGANISM_APPEARED', 'test');
+  ui.onObservationAppended(entry);
+  assert.ok(ui.getRowText(0).includes('—'), 'Negative tick displays —');
+  assert.ok(!ui.getRowText(0).includes('T-1'));
+});
+
+test('C07-31: String tick displays —', () => {
+  const ui = new ObservationLogUIModel();
+  const entry = makeSampleEntry(1, 0, '12', 'SIMULATION', 'ORGANISM_APPEARED', 'test');
+  ui.onObservationAppended(entry);
+  assert.ok(ui.getRowText(0).includes('—'), 'String tick displays —');
+  assert.ok(!ui.getRowText(0).includes('T12'));
+});
+
+test('C07-32: Null tick displays —', () => {
+  const ui = new ObservationLogUIModel();
+  const entry = makeSampleEntry(1, 0, null, 'VIEW', 'Z_LAYER_CHANGED', 'view');
+  ui.onObservationAppended(entry);
+  assert.ok(ui.getRowText(0).includes('—'), 'Null tick displays —');
+});
+
+test('C07-33: Reset still produces exactly one visual row', () => {
+  const ui = new ObservationLogUIModel();
+  assert.equal(ui.getDisplayedRowCount(), 0);
+
+  const resetEntry = makeSampleEntry(1, 1, 0, 'SIMULATION', 'SIMULATION_RESET', 'reset test');
+  ui.onObservationAppended(resetEntry);
+
+  assert.equal(ui.getDisplayedRowCount(), 1, 'Reset must produce exactly one visual row');
 });
