@@ -343,6 +343,7 @@
         "stage_diet_matrix",
         "energy_yield_per_unit",
         "biomass_yield_per_unit",
+        "base_intake_capacity_per_tick",
         "starvation_threshold",
         "confidence"
       ],
@@ -360,6 +361,11 @@
         },
         "energy_yield_per_unit": { "type": "number", "minimum": 0.0 },
         "biomass_yield_per_unit": { "type": "number", "minimum": 0.0 },
+        "base_intake_capacity_per_tick": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Baseline resource intake capacity consumed per tick during feeding stages"
+        },
         "starvation_threshold": { "type": "number", "minimum": 0.0 },
         "confidence": {
           "type": "string",

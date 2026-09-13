@@ -41,3 +41,8 @@ export {
   createResourcePool,
   allocateResourceDemands
 } from './resource_pool.js';
+
+export {
+  calculateOrganismResourceDemand,
+  executePopulationBiologicalTick
+} from './biological_tick_coordinator.js';

@@ -181,7 +181,15 @@ for (const profilePath of profilePaths) {
     checkRange('substrate_moisture', env.substrate_moisture);
   }
 
-  // 7. Reproduction Profile Check
+  // 7. Nutrition Profile Check
+  if (profile.nutrition_profile) {
+    const nut = profile.nutrition_profile;
+    if (typeof nut.base_intake_capacity_per_tick !== 'number' || nut.base_intake_capacity_per_tick < 0) {
+      errors.push('nutrition_profile.base_intake_capacity_per_tick must be a non-negative number');
+    }
+  }
+
+  // 8. Reproduction Profile Check
   if (profile.reproduction_profile) {
     const rep = profile.reproduction_profile;
     if (!rep.sex_determination || typeof rep.sex_determination !== 'object') {

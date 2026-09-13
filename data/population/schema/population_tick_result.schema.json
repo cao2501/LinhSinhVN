@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://linhsinhvn.game/schemas/population/population_tick_result.schema.json",
+  "title": "PopulationTickResult",
+  "description": "Deterministic serializable snapshot of a committed population biological tick",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "population_id",
+    "simulation_tick",
+    "next_simulation_tick",
+    "delta_time",
+    "environment_snapshot",
+    "resource_allocation",
+    "organism_results",
+    "events"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "population_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique population identifier"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Discrete simulation tick evaluated by organisms during this biological tick"
+    },
+    "next_simulation_tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Simulation tick of the clock after the successful commit"
+    },
+    "delta_time": {
+      "type": "number",
+      "exclusiveMinimum": 0.0,
+      "description": "Discrete delta time applied during this biological tick"
+    },
+    "environment_snapshot": {
+      "type": "object",
+      "description": "Immutable environment snapshot observed by all organisms"
+    },
+    "resource_allocation": {
+      "$ref": "resource_allocation.schema.json",
+      "description": "Deterministic resource allocation result for this tick"
+    },
+    "organism_results": {
+      "type": "array",
+      "description": "Summary of active organism outcomes strictly sorted by organism_id ascending",
+      "items": {
+        "type": "object",
+        "required": [
+          "organism_id",
+          "is_alive",
+          "status",
+          "current_stage_id",
+          "snapshot"
+        ],
+        "properties": {
+          "organism_id": { "type": "string", "minLength": 1 },
+          "is_alive": { "type": "boolean" },
+          "status": { "type": "string" },
+          "current_stage_id": { "type": "string" },
+          "current_substage_id": { "type": ["string", "null"] },
+          "snapshot": { "type": "object" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "events": {
+      "type": "array",
+      "description": "Aggregated lifecycle events emitted during this tick in canonical order",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "additionalProperties": false
+}

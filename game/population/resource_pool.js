@@ -155,6 +155,23 @@ export class ResourcePool {
   }
 
   /**
+   * Commits a previously calculated AllocationResult to the pool state.
+   * Used by transactional coordinators (Phase E) to ensure atomic commit.
+   *
+   * @param {object} allocationResult - Result from allocateResourceDemands()
+   * @throws {TypeError|RangeError} If invalid
+   */
+  commitAllocation(allocationResult) {
+    if (!allocationResult || typeof allocationResult !== 'object') {
+      throw new TypeError('allocationResult must be a non-null object');
+    }
+    if (typeof allocationResult.remaining_resource !== 'number' || !Number.isFinite(allocationResult.remaining_resource) || allocationResult.remaining_resource < 0) {
+      throw new TypeError('allocationResult.remaining_resource must be a finite non-negative number');
+    }
+    this._availableQuantity = allocationResult.remaining_resource;
+  }
+
+  /**
    * Returns a serializable, frozen snapshot of the resource pool.
    * @returns {Readonly<{ schema_version: string, initial_quantity: number, available_quantity: number }>}
    */

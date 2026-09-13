@@ -248,6 +248,7 @@
     },
     "energy_yield_per_unit": 1.20,
     "biomass_yield_per_unit": 0.80,
+    "base_intake_capacity_per_tick": 10.0,
     "starvation_threshold": 0.0,
     "confidence": "PROVISIONAL"
   },

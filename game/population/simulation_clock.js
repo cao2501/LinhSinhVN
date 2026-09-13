@@ -26,6 +26,14 @@ export class SimulationClock {
   }
 
   /**
+   * Alias for current discrete simulation tick.
+   * @returns {number}
+   */
+  get currentTick() {
+    return this._tick;
+  }
+
+  /**
    * Most recent delta_time value passed to advance(), or null if not yet advanced.
    * @returns {number|null}
    */

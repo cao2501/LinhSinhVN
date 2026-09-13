@@ -245,3 +245,58 @@ To ensure 100% deterministic, replayable, and insertion-order invariant results:
 - **Environment Boundary**: `EnvironmentState.food_resource` is **not** mutated during allocation. The decision of how and when consumed resources permanently deplete the environment is a population ecology policy deferred to subsequent tasks.
 - **API Safety**: `allocateResourceDemands()` is the pure single source of truth. `ResourcePool.allocateDemands()` invokes this function and updates pool state exactly once.
 - **Zero Biology in TASK 06-B-01**: This task establishes the allocation contract only; it does **not** execute organism lifecycle ticks.
+
+---
+
+## 11. Biological Tick Coordinator (TASK 06-B-02)
+
+### 11.1 Purpose and Architectural Boundaries
+The Population Biological Tick Coordinator (`executePopulationBiologicalTick`) serves as the deterministic orchestrator executing biological progression for all registered organisms within a `SimulationWorld`.
+
+It strictly adheres to the following boundaries:
+- **No Reproduction**: Child creation, mating, clutch generation, and egg deposition are strictly out of scope and deferred to TASK 06-B-03.
+- **Pure Allocation Execution**: Computes resource allocations purely before committing, ensuring total transaction rollback on any biological evaluation failure.
+- **Dead Organism Semantics**: Dead organisms (`current_stage === 'DEAD'`) remain registered in `PopulationRegistry`, generate zero demand, consume zero resources, execute no ticks, and emit no events.
+- **Data-Driven Intake**: Organism feeding demand is derived exclusively from `speciesProfile.nutrition_profile.base_intake_capacity_per_tick * deltaTime`. No hardcoded fallback constant exists in the coordinator.
+- **Explicit Species Inversion**: The `SimulationWorld` remains generic; species profiles are passed explicitly via tick options or organism profile mapping.
+
+### 11.2 Five-Phase Execution Pipeline
+Every biological tick progresses through five atomic, sequential phases:
+
+```
+PHASE A: Snapshot / Preflight
+  │ Validate deltaTime, options, clock, and species profiles.
+  │ Snapshot EnvironmentState into LifecycleEnvironment.
+  │ Retrieve active organisms sorted lexicographically by organism_id.
+  ▼
+PHASE B: Demand Generation
+  │ For each organism, query lifecycle state and stage.
+  │ If DEAD or non-feeding stage or empty diet: demand = 0.
+  │ Else: demand = base_intake_capacity_per_tick * deltaTime.
+  ▼
+PHASE C: Pure Resource Allocation
+  │ Resolve resource pool from options.resource_pool or world.getResourcePool().
+  │ Execute allocateResourceDemands(availableResource, demands).
+  │ Allocation is strictly pure; resource pool is not mutated here.
+  ▼
+PHASE D: Isolated Biological Evaluation
+  │ Deep copy organism state to guarantee same-tick isolation.
+  │ Call LifecycleRuntime.tick(orgCopy, lifecycleEnv, deltaTime, { food_intake_amount }).
+  │ Collect evaluated candidate states and emitted lifecycle events.
+  ▼
+PHASE E: Validation + Atomic Commit
+  │ Validate all candidate states. If any evaluation fails, abort tick:
+  │   - World / Organisms remain untouched
+  │   - ResourcePool remains untouched
+  │   - SimulationClock remains untouched
+  │ If valid:
+  │   - Commit candidate states to PopulationRegistry
+  │   - Commit allocation to ResourcePool exactly once (commitAllocation)
+  │   - Advance SimulationClock exactly once
+  │   - Return PopulationTickResult
+```
+
+### 11.3 Determinism and Failure Atomicity
+- **Replay Determinism**: Canonical lexicographical sorting by `organism_id` guarantees identical allocation and evaluation results across repeated runs from identical initial state.
+- **Isolation**: Organisms evaluated in Phase D cannot read or write the state of other organisms within the same tick.
+- **Zero Double-Subtraction**: The `ResourcePool` is mutated exclusively during Phase E using `ResourcePool.commitAllocation(allocationResult)`.

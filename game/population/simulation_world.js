@@ -10,6 +10,7 @@ import { SimulationClock, createSimulationClock } from './simulation_clock.js';
 import { PopulationRegistry, createPopulationRegistry } from './population_registry.js';
 import { createEnvironmentState, validateEnvironmentState } from './environment_state.js';
 import { computePopulationTickSeed } from './seed_contract.js';
+import { executePopulationBiologicalTick } from './biological_tick_coordinator.js';
 
 const HEX_64_REGEX = /^0x[0-9a-fA-F]{16}$/;
 
@@ -81,6 +82,22 @@ export class SimulationWorld {
   }
 
   /**
+   * Access the underlying SimulationClock instance.
+   * @returns {SimulationClock}
+   */
+  get clock() {
+    return this._clock;
+  }
+
+  /**
+   * Access the underlying PopulationRegistry instance.
+   * @returns {PopulationRegistry}
+   */
+  get registry() {
+    return this._population;
+  }
+
+  /**
    * Returns current discrete simulation tick.
    * @returns {number}
    */
@@ -118,6 +135,14 @@ export class SimulationWorld {
   }
 
   /**
+   * Alias for getEnvironment().
+   * @returns {Readonly<object>}
+   */
+  getEnvironmentState() {
+    return this._environment;
+  }
+
+  /**
    * Defensively updates environment state with strict validation and deep freezing.
    * External modification of the caller's input object has zero effect on world state.
    *
@@ -135,13 +160,42 @@ export class SimulationWorld {
 
   /**
    * Advances the simulation clock by strictly +1 tick.
-   * CRITICAL: In TASK 06-A, this does NOT execute lifecycle or reproduction biology.
+   * NOTE: In TASK 06-A, this does NOT execute lifecycle or reproduction biology.
+   * Use advanceBiologicalTick() for multi-organism lifecycle execution.
    *
    * @param {number} deltaTime - Positive delta time for this tick
    * @returns {number} The new simulation tick
    */
   advanceTick(deltaTime) {
     return this._clock.advance(deltaTime);
+  }
+
+  /**
+   * Returns the optional shared ResourcePool, if one was configured.
+   * @returns {object|null}
+   */
+  getResourcePool() {
+    return this._resourcePool || null;
+  }
+
+  /**
+   * Sets the shared ResourcePool on the world.
+   * @param {object} pool - ResourcePool instance
+   */
+  setResourcePool(pool) {
+    this._resourcePool = pool;
+  }
+
+  /**
+   * Executes a single deterministic population biological tick across all alive organisms.
+   * Orchestrates Snapshot -> Demand -> Allocation -> Evaluation -> Atomic Commit.
+   *
+   * @param {number} deltaTime - Positive delta time
+   * @param {object} options - Options containing mandatory species_profile
+   * @returns {Readonly<object>} PopulationTickResult
+   */
+  advanceBiologicalTick(deltaTime, options = {}) {
+    return executePopulationBiologicalTick(this, deltaTime, options);
   }
 
   /**
