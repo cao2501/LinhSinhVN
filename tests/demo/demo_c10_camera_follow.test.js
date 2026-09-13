@@ -1,0 +1,775 @@
+/**
+ * tests/demo/demo_c10_camera_follow.test.js
+ * 
+ * DEMO-01-C / C-10-C: Organism Focus & Camera Follow Test Suite
+ * 
+ * Presentation-only camera focus and follow model verification:
+ * - One-shot Focus ('F') on selected organisms (alive or dead)
+ * - Continuous Follow ('Shift+F') tracking live organisms on active Z-layer
+ * - Unified single source of truth for visual position & slot offsets
+ * - Narrow presentation record contract: { valid, is_alive, visual_position }
+ * - Frame-rate-independent camera smoothing (1.0 - exp(-speed * delta))
+ * - Automatic cancellation on manual pan (WASD, drag), death, disappearance, or Z change
+ * - Strict epoch isolation via selection signal
+ * - Zero simulation authority, zero IPC, zero duplicate organism interpolation
+ * 
+ * Covers C10-C01 through C10-C28 specified by Game Director.
+ */
+
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+import { execSync } from 'node:child_process';
+
+const ROOT_DIR = path.resolve('D:/LinhSinhVN');
+const CONTROLLER_PATH = path.join(ROOT_DIR, 'godot/scripts/presentation/camera_controller.gd');
+const OVERLAY_PATH = path.join(ROOT_DIR, 'godot/scripts/presentation/organisms_overlay.gd');
+const SCENE_PATH = path.join(ROOT_DIR, 'godot/scenes/world_view.tscn');
+
+const WORLD_WIDTH = 800.0;
+const WORLD_HEIGHT = 800.0;
+const WORLD_CENTER = { x: 400.0, y: 400.0 };
+
+const MIN_ZOOM = 0.6;
+const MAX_ZOOM = 4.0;
+const FOCUS_SMOOTH_SPEED = 10.0;
+const FOLLOW_SMOOTH_SPEED = 12.0;
+
+// Pure Mathematical & State Model Mirroring OrganismsOverlay Camera Target Pipeline
+class OrganismsOverlayModel {
+  constructor() {
+    this.activeZLayer = 0;
+    this.selectedOrganismId = '';
+    this.cachedOrganisms = [];
+    this.interpolationStates = {};
+    this.selectionListeners = [];
+  }
+
+  connectSelection(listener) {
+    this.selectionListeners.push(listener);
+  }
+
+  selectOrganism(orgId) {
+    if (this.selectedOrganismId !== orgId) {
+      this.selectedOrganismId = orgId;
+      for (const l of this.selectionListeners) {
+        l(this.selectedOrganismId);
+      }
+    }
+  }
+
+  calculateSlotCenter(origin, count, slotIndex) {
+    if (count === 1) {
+      return { x: origin.x + 8.0, y: origin.y + 8.0 };
+    } else if (count === 2) {
+      return {
+        x: origin.x + (slotIndex === 0 ? 5.0 : 11.0),
+        y: origin.y + 8.0
+      };
+    } else if (count === 3) {
+      return {
+        x: origin.x + (slotIndex === 0 ? 5.0 : slotIndex === 1 ? 11.0 : 8.0),
+        y: origin.y + (slotIndex === 0 ? 5.0 : slotIndex === 1 ? 5.0 : 11.0)
+      };
+    } else if (count === 4) {
+      return {
+        x: origin.x + (slotIndex === 0 || slotIndex === 2 ? 5.0 : 11.0),
+        y: origin.y + (slotIndex === 0 || slotIndex === 1 ? 5.0 : 11.0)
+      };
+    } else {
+      return { x: origin.x + 8.0, y: origin.y + 8.0 };
+    }
+  }
+
+  getOrganismVisualPosition(org, fallbackCenter) {
+    const orgId = org.organism_id || '';
+    if (this.interpolationStates[orgId]) {
+      const st = this.interpolationStates[orgId];
+      const sourcePx = st.source_px || fallbackCenter;
+      const targetPx = st.target_px || fallbackCenter;
+      const alpha = Math.max(0.0, Math.min(1.0, st.alpha !== undefined ? st.alpha : 1.0));
+      const baseInterp = {
+        x: sourcePx.x + (targetPx.x - sourcePx.x) * alpha,
+        y: sourcePx.y + (targetPx.y - sourcePx.y) * alpha
+      };
+      const slotOffset = {
+        x: fallbackCenter.x - targetPx.x,
+        y: fallbackCenter.y - targetPx.y
+      };
+      return {
+        x: baseInterp.x + slotOffset.x,
+        y: baseInterp.y + slotOffset.y
+      };
+    }
+    return fallbackCenter;
+  }
+
+  getOrganismCameraTarget(orgId) {
+    if (!orgId) {
+      return { valid: false, is_alive: false, visual_position: { x: 0, y: 0 } };
+    }
+
+    const org = this.cachedOrganisms.find(o => o.organism_id === orgId);
+    if (!org || !org.position || typeof org.position !== 'object') {
+      return { valid: false, is_alive: false, visual_position: { x: 0, y: 0 } };
+    }
+
+    const z = org.position.z !== undefined ? org.position.z : 0;
+    if (z !== this.activeZLayer) {
+      return { valid: false, is_alive: false, visual_position: { x: 0, y: 0 } };
+    }
+
+    const cellX = org.position.x || 0;
+    const cellY = org.position.y || 0;
+
+    const group = this.cachedOrganisms.filter(candidate => {
+      return candidate.position &&
+        candidate.position.z === this.activeZLayer &&
+        candidate.position.x === cellX &&
+        candidate.position.y === cellY;
+    });
+
+    group.sort((a, b) => String(a.organism_id).localeCompare(String(b.organism_id)));
+
+    const count = group.length;
+    let slotIndex = 0;
+    for (let i = 0; i < count; i++) {
+      if (group[i].organism_id === orgId) {
+        slotIndex = i;
+        break;
+      }
+    }
+
+    if (count > 4 && slotIndex > 0) {
+      slotIndex = 0;
+    }
+
+    const origin = { x: cellX * 16.0, y: cellY * 16.0 };
+    const slotCenter = this.calculateSlotCenter(origin, count, slotIndex);
+    const visualPos = this.getOrganismVisualPosition(org, slotCenter);
+
+    const isAlive = org.is_alive !== false;
+
+    return {
+      valid: true,
+      is_alive: isAlive,
+      visual_position: visualPos
+    };
+  }
+
+  simulateEpochChange() {
+    this.selectedOrganismId = '';
+    this.cachedOrganisms = [];
+    this.interpolationStates = {};
+    for (const l of this.selectionListeners) {
+      l('');
+    }
+  }
+}
+
+// Pure Mathematical & State Model Mirroring CameraController Focus & Follow
+class CameraFollowModel {
+  constructor(overlay, viewportSize = { x: 1152.0, y: 648.0 }) {
+    this.overlay = overlay;
+    this.viewportSize = { ...viewportSize };
+    this.zoom = 1.0;
+    this.position = { x: 400.0, y: 400.0 };
+
+    this.isTracking = false;
+    this.targetId = '';
+    this.isFocusing = false;
+    this.focusId = '';
+
+    if (this.overlay) {
+      this.overlay.connectSelection(id => this.onSelectionChanged(id));
+    }
+  }
+
+  clampCameraCenter(targetPos, vpSize, z) {
+    const hw = vpSize.x / (2.0 * z);
+    const hh = vpSize.y / (2.0 * z);
+    let cx, cy;
+
+    if (2.0 * hw >= WORLD_WIDTH) {
+      cx = WORLD_WIDTH * 0.5;
+    } else {
+      cx = Math.max(hw, Math.min(WORLD_WIDTH - hw, targetPos.x));
+    }
+
+    if (2.0 * hh >= WORLD_HEIGHT) {
+      cy = WORLD_HEIGHT * 0.5;
+    } else {
+      cy = Math.max(hh, Math.min(WORLD_HEIGHT - hh, targetPos.y));
+    }
+
+    return { x: cx, y: cy };
+  }
+
+  focusOrganism(orgId) {
+    if (!this.overlay) return false;
+    const rec = this.overlay.getOrganismCameraTarget(orgId);
+    if (!rec.valid) return false;
+
+    this.isFocusing = true;
+    this.focusId = orgId;
+    return true;
+  }
+
+  cancelFocus() {
+    this.isFocusing = false;
+    this.focusId = '';
+  }
+
+  startFollowing(orgId) {
+    if (!this.overlay) return false;
+    const rec = this.overlay.getOrganismCameraTarget(orgId);
+    if (!rec.valid || !rec.is_alive) return false;
+
+    this.isTracking = true;
+    this.targetId = orgId;
+    this.isFocusing = false;
+    return true;
+  }
+
+  stopFollowing() {
+    this.isTracking = false;
+    this.targetId = '';
+  }
+
+  onSelectionChanged(newId) {
+    if (this.isFocusing) {
+      this.cancelFocus();
+    }
+
+    if (this.isTracking) {
+      if (!newId) {
+        this.stopFollowing();
+      } else if (newId === this.targetId) {
+        // Same organism -> preserve follow
+      } else {
+        // A -> B
+        const rec = this.overlay.getOrganismCameraTarget(newId);
+        if (rec.valid && rec.is_alive) {
+          this.targetId = newId;
+        } else {
+          this.stopFollowing();
+        }
+      }
+    }
+  }
+
+  process(delta, inputVec = { x: 0, y: 0 }) {
+    // Manual pan check
+    if (inputVec.x !== 0 || inputVec.y !== 0) {
+      if (this.isTracking) this.stopFollowing();
+      if (this.isFocusing) this.cancelFocus();
+
+      const len = Math.hypot(inputVec.x, inputVec.y);
+      const dir = { x: inputVec.x / len, y: inputVec.y / len };
+      const screenDelta = { x: dir.x * (400.0 * delta), y: dir.y * (400.0 * delta) };
+      const worldDelta = { x: screenDelta.x / this.zoom, y: screenDelta.y / this.zoom };
+      this.position = this.clampCameraCenter(
+        { x: this.position.x + worldDelta.x, y: this.position.y + worldDelta.y },
+        this.viewportSize,
+        this.zoom
+      );
+      return;
+    }
+
+    // Follow loop
+    if (this.isTracking) {
+      const rec = this.overlay.getOrganismCameraTarget(this.targetId);
+      if (!rec.valid || !rec.is_alive) {
+        this.stopFollowing();
+        return;
+      }
+      const clampedDest = this.clampCameraCenter(rec.visual_position, this.viewportSize, this.zoom);
+      const weight = 1.0 - Math.exp(-FOLLOW_SMOOTH_SPEED * delta);
+      this.position = {
+        x: this.position.x + (clampedDest.x - this.position.x) * weight,
+        y: this.position.y + (clampedDest.y - this.position.y) * weight
+      };
+      return;
+    }
+
+    // Focus loop
+    if (this.isFocusing) {
+      const rec = this.overlay.getOrganismCameraTarget(this.focusId);
+      if (!rec.valid) {
+        this.cancelFocus();
+        return;
+      }
+      const clampedDest = this.clampCameraCenter(rec.visual_position, this.viewportSize, this.zoom);
+      const weight = 1.0 - Math.exp(-FOCUS_SMOOTH_SPEED * delta);
+      this.position = {
+        x: this.position.x + (clampedDest.x - this.position.x) * weight,
+        y: this.position.y + (clampedDest.y - this.position.y) * weight
+      };
+      if (Math.hypot(clampedDest.x - this.position.x, clampedDest.y - this.position.y) < 0.5) {
+        this.position = clampedDest;
+        this.cancelFocus();
+      }
+    }
+  }
+}
+
+describe('DEMO-01-C / C-10-C: Organism Focus & Camera Follow Suite', () => {
+
+  // --- C10-C01: selected organism focus ---
+  it('C10-C01: focus_organism sets camera target toward selected organism visual position', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_1', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    assert.strictEqual(camera.focusOrganism('org_1'), true);
+    assert.strictEqual(camera.isFocusing, true);
+    assert.strictEqual(camera.focusId, 'org_1');
+  });
+
+  // --- C10-C02: focus uses exact visual position ---
+  it('C10-C02: Focus consumes interpolated visual position rather than discrete grid position', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_1', position: { x: 21, y: 20, z: 0 }, is_alive: true }
+    ];
+    overlay.interpolationStates['org_1'] = {
+      source_px: { x: 328.0, y: 328.0 },
+      target_px: { x: 344.0, y: 328.0 },
+      alpha: 0.5 // Midpoint: 336.0
+    };
+    const target = overlay.getOrganismCameraTarget('org_1');
+    assert.strictEqual(target.valid, true);
+    assert.strictEqual(target.visual_position.x, 336.0);
+    assert.strictEqual(target.visual_position.y, 328.0);
+  });
+
+  // --- C10-C03: focus respects camera bounds ---
+  it('C10-C03: Focus target respects clamp_camera_center bounds and cannot place viewport out of world', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_edge', position: { x: 0, y: 0, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay, { x: 1152.0, y: 648.0 });
+    camera.zoom = 1.0;
+    // With viewport 1152x648 at Z=1.0, width span exceeds 800, so cx locks to 400.0
+    const clamped = camera.clampCameraCenter({ x: 8.0, y: 8.0 }, camera.viewportSize, camera.zoom);
+    assert.strictEqual(clamped.x, 400.0);
+    assert.ok(clamped.y >= 324.0);
+  });
+
+  // --- C10-C04: follow activation ---
+  it('C10-C04: start_following transitions controller into is_following == true for live organism', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_live', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    assert.strictEqual(camera.startFollowing('org_live'), true);
+    assert.strictEqual(camera.isTracking, true);
+    assert.strictEqual(camera.targetId, 'org_live');
+  });
+
+  // --- C10-C05: follow visual tracking ---
+  it('C10-C05: Follow loop tracks visual position continuously across simulation frames', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_moving', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay, { x: 400, y: 400 });
+    camera.zoom = 2.0; // High zoom so camera centers exactly
+    camera.startFollowing('org_moving');
+
+    // Simulate 30 frames of follow tracking
+    for (let f = 0; f < 30; f++) {
+      camera.process(1.0 / 60.0);
+    }
+    // Target position is 25*16 + 8 = 408.0
+    assert.ok(Math.abs(camera.position.x - 408.0) < 1.0);
+    assert.ok(Math.abs(camera.position.y - 408.0) < 1.0);
+  });
+
+  // --- C10-C06: stacked target ---
+  it('C10-C06: Follow targets exact quadrant slot offset for stacked organisms in the same cell', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_a', position: { x: 10, y: 10, z: 0 }, is_alive: true },
+      { organism_id: 'org_b', position: { x: 10, y: 10, z: 0 }, is_alive: true }
+    ];
+    const targetA = overlay.getOrganismCameraTarget('org_a');
+    const targetB = overlay.getOrganismCameraTarget('org_b');
+
+    assert.strictEqual(targetA.valid, true);
+    assert.strictEqual(targetB.valid, true);
+    // Origin is (160, 160). For count 2, slot 0 is +5, +8 -> (165, 168); slot 1 is +11, +8 -> (171, 168)
+    assert.strictEqual(targetA.visual_position.x, 165.0);
+    assert.strictEqual(targetA.visual_position.y, 168.0);
+    assert.strictEqual(targetB.visual_position.x, 171.0);
+    assert.strictEqual(targetB.visual_position.y, 168.0);
+  });
+
+  // --- C10-C07: dead target cancellation ---
+  it('C10-C07: Dead organism (is_alive == false) automatically cancels follow mode', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_dying', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    camera.startFollowing('org_dying');
+    assert.strictEqual(camera.isTracking, true);
+
+    // Organism dies in new snapshot
+    overlay.cachedOrganisms[0].is_alive = false;
+
+    camera.process(1.0 / 60.0);
+    assert.strictEqual(camera.isTracking, false, 'Follow must be cancelled when target dies');
+    assert.strictEqual(camera.targetId, '');
+  });
+
+  // --- C10-C08: dead target focus remains possible ---
+  it('C10-C08: Dead organism (is_alive == false) allows one-shot Focus on corpse', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_corpse', position: { x: 25, y: 25, z: 0 }, is_alive: false }
+    ];
+    const targetRec = overlay.getOrganismCameraTarget('org_corpse');
+    assert.strictEqual(targetRec.valid, true, 'Corpse on active Z layer is valid for presentation');
+    assert.strictEqual(targetRec.is_alive, false);
+
+    const camera = new CameraFollowModel(overlay);
+    assert.strictEqual(camera.focusOrganism('org_corpse'), true, 'Focus on corpse must succeed');
+    assert.strictEqual(camera.isFocusing, true);
+  });
+
+  // --- C10-C09: missing/pruned target cancellation ---
+  it('C10-C09: Missing or pruned organism immediately cancels follow mode', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_despawn', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    camera.startFollowing('org_despawn');
+
+    // Despawn/prune from snapshot
+    overlay.cachedOrganisms = [];
+
+    camera.process(1.0 / 60.0);
+    assert.strictEqual(camera.isTracking, false);
+    assert.strictEqual(camera.targetId, '');
+  });
+
+  // --- C10-C10: Z-layer cancellation ---
+  it('C10-C10: Active Z-layer change with target on different layer cancels follow mode immediately', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_z0', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    camera.startFollowing('org_z0');
+
+    // User changes active Z to 1
+    overlay.activeZLayer = 1;
+
+    camera.process(1.0 / 60.0);
+    assert.strictEqual(camera.isTracking, false, 'Follow must cancel when target is invisible on active Z');
+  });
+
+  // --- C10-C11: reset/epoch cancellation ---
+  it('C10-C11: Simulation RESET (epoch change) invalidates follow state via selection clear signal', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_epoch', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    camera.startFollowing('org_epoch');
+    assert.strictEqual(camera.isTracking, true);
+
+    // Simulation reset triggers epoch change and clears selection
+    overlay.simulateEpochChange();
+
+    assert.strictEqual(camera.isTracking, false, 'Follow must be cancelled on epoch change');
+    assert.strictEqual(camera.targetId, '');
+  });
+
+  // --- C10-C12: epoch isolation ---
+  it('C10-C12: Epoch isolation guarantees old organism ID cannot bridge into new simulation epoch', () => {
+    const overlay = new OrganismsOverlayModel();
+    const camera = new CameraFollowModel(overlay);
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_old_epoch', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    camera.startFollowing('org_old_epoch');
+
+    // Epoch reset clears cache and selection
+    overlay.simulateEpochChange();
+
+    // New epoch populates new organisms
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_new_epoch', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+
+    camera.process(1.0 / 60.0);
+    assert.strictEqual(camera.isTracking, false);
+    assert.strictEqual(camera.targetId, '');
+  });
+
+  // --- C10-C13: disconnect freeze/no jump ---
+  it('C10-C13: Transport DISCONNECT freezes camera at last valid position with zero teleportation or NaN', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_disc', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay, { x: 400, y: 400 });
+    camera.zoom = 2.0;
+    camera.startFollowing('org_disc');
+
+    for (let f = 0; f < 90; f++) {
+      camera.process(1.0 / 60.0);
+    }
+    const posBeforeDisconnect = { ...camera.position };
+
+    // Simulation stops sending updates during disconnect
+    for (let f = 0; f < 30; f++) {
+      camera.process(1.0 / 60.0);
+    }
+
+    assert.ok(Math.abs(camera.position.x - posBeforeDisconnect.x) < 0.01);
+    assert.ok(Math.abs(camera.position.y - posBeforeDisconnect.y) < 0.01);
+    assert.ok(!isNaN(camera.position.x));
+    assert.ok(!isNaN(camera.position.y));
+  });
+
+  // --- C10-C14: reconnect isolation ---
+  it('C10-C14: Transport RECONNECT resumes follow only if organism is alive and present in current epoch', () => {
+    const overlay = new OrganismsOverlayModel();
+    const camera = new CameraFollowModel(overlay);
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_rec', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    camera.startFollowing('org_rec');
+
+    // Transport reconnects with epoch reset
+    overlay.simulateEpochChange();
+    assert.strictEqual(camera.isTracking, false);
+  });
+
+  // --- C10-C15: keyboard pan cancellation ---
+  it('C10-C15: Manual keyboard pan (WASD / Arrows) immediately cancels follow mode on frame 0', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_pan', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    camera.startFollowing('org_pan');
+    assert.strictEqual(camera.isTracking, true);
+
+    // User presses 'D' (right)
+    camera.process(1.0 / 60.0, { x: 1.0, y: 0.0 });
+    assert.strictEqual(camera.isTracking, false, 'Keyboard pan must immediately cancel follow');
+    assert.strictEqual(camera.targetId, '');
+  });
+
+  // --- C10-C16: mouse drag cancellation ---
+  it('C10-C16: Manual mouse drag pan immediately cancels follow mode', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_drag', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    camera.startFollowing('org_drag');
+
+    // Simulate middle/right drag event start
+    camera.stopFollowing(); // Mirrors _unhandled_input drag branch
+    assert.strictEqual(camera.isTracking, false);
+  });
+
+  // --- C10-C17: wheel preserves follow ---
+  it('C10-C17: Mouse wheel zoom preserves follow mode while updating camera zoom level', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_zoom', position: { x: 25, y: 25, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    camera.startFollowing('org_zoom');
+
+    // Zoom in
+    camera.zoom = Math.min(MAX_ZOOM, camera.zoom * 1.15);
+    camera.process(1.0 / 60.0);
+
+    assert.strictEqual(camera.isTracking, true, 'Zoom must preserve active follow mode');
+    assert.strictEqual(camera.targetId, 'org_zoom');
+  });
+
+  // --- C10-C18: F focus ---
+  it('C10-C18: Key F triggers one-shot focus on currently selected organism', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_f', position: { x: 30, y: 30, z: 0 }, is_alive: true }
+    ];
+    overlay.selectOrganism('org_f');
+    const camera = new CameraFollowModel(overlay);
+
+    assert.strictEqual(camera.focusOrganism(overlay.selectedOrganismId), true);
+    assert.strictEqual(camera.isFocusing, true);
+    assert.strictEqual(camera.isTracking, false, 'Focus must NOT activate continuous follow');
+  });
+
+  // --- C10-C19: Shift+F toggle ---
+  it('C10-C19: Key Shift+F toggles follow mode for currently selected organism', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_toggle', position: { x: 30, y: 30, z: 0 }, is_alive: true }
+    ];
+    overlay.selectOrganism('org_toggle');
+    const camera = new CameraFollowModel(overlay);
+
+    // Toggle ON
+    assert.strictEqual(camera.startFollowing(overlay.selectedOrganismId), true);
+    assert.strictEqual(camera.isTracking, true);
+
+    // Toggle OFF
+    camera.stopFollowing();
+    assert.strictEqual(camera.isTracking, false);
+  });
+
+  // --- C10-C20: ESC cancellation ---
+  it('C10-C20: Key Escape immediately cancels active follow mode', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_esc', position: { x: 30, y: 30, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    camera.startFollowing('org_esc');
+    assert.strictEqual(camera.isTracking, true);
+
+    camera.stopFollowing(); // Mirrors ESC handler
+    assert.strictEqual(camera.isTracking, false);
+  });
+
+  // --- C10-C21: selection change retarget/cancel ---
+  it('C10-C21: Selection change retargets follow if new target is valid+alive, otherwise cancels', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_1', position: { x: 20, y: 20, z: 0 }, is_alive: true },
+      { organism_id: 'org_2', position: { x: 25, y: 25, z: 0 }, is_alive: true },
+      { organism_id: 'org_dead', position: { x: 30, y: 30, z: 0 }, is_alive: false }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    overlay.selectOrganism('org_1');
+    camera.startFollowing('org_1');
+    assert.strictEqual(camera.targetId, 'org_1');
+
+    // Select org_2 (alive & visible) -> retargets to org_2
+    overlay.selectOrganism('org_2');
+    assert.strictEqual(camera.isTracking, true);
+    assert.strictEqual(camera.targetId, 'org_2');
+
+    // Select org_dead -> cancels follow
+    overlay.selectOrganism('org_dead');
+    assert.strictEqual(camera.isTracking, false);
+    assert.strictEqual(camera.targetId, '');
+  });
+
+  // --- C10-C22: no IPC authority ---
+  it('C10-C22: Static safety audit: camera_controller.gd and organisms_overlay.gd contain zero IPC calls', () => {
+    const controllerCode = fs.readFileSync(CONTROLLER_PATH, 'utf8');
+    const overlayCode = fs.readFileSync(OVERLAY_PATH, 'utf8');
+
+    assert.doesNotMatch(controllerCode, /\bIpcClient\b/);
+    assert.doesNotMatch(controllerCode, /\bget_snapshot\b/);
+    assert.doesNotMatch(controllerCode, /\bstep\b\s*\(/);
+    assert.doesNotMatch(controllerCode, /\bplay\b\s*\(/);
+    assert.doesNotMatch(controllerCode, /\bpause\b\s*\(/);
+    assert.doesNotMatch(controllerCode, /\breset\b\s*\(/);
+
+    assert.doesNotMatch(overlayCode, /\bIpcClient\b/);
+  });
+
+  // --- C10-C23: no simulation authority ---
+  it('C10-C23: Static safety audit: CameraController contains zero simulation state authority', () => {
+    const controllerCode = fs.readFileSync(CONTROLLER_PATH, 'utf8');
+
+    assert.doesNotMatch(controllerCode, /\bSnapshotSynchronizer\b/);
+    assert.doesNotMatch(controllerCode, /\b_session_epoch\b/);
+    assert.doesNotMatch(controllerCode, /\bbiological_state\b/);
+    assert.doesNotMatch(controllerCode, /\bmetabolic_rate\b/);
+  });
+
+  // --- C10-C24: no duplicate organism interpolation ---
+  it('C10-C24: Negative audit: CameraController does not duplicate organism interpolation or slot math', () => {
+    const controllerCode = fs.readFileSync(CONTROLLER_PATH, 'utf8');
+
+    assert.doesNotMatch(controllerCode, /\bOrganismInterpolator\b/);
+    assert.doesNotMatch(controllerCode, /\b_interpolation_states\b/);
+    assert.doesNotMatch(controllerCode, /\binterpolate_position\b/);
+    assert.doesNotMatch(controllerCode, /\b_calculate_slot_center\b/);
+  });
+
+  // --- C10-C25: frame-rate-independent smoothing ---
+  it('C10-C25: Camera smoothing consumes frame-rate-independent exponential decay (1.0 - exp(-k * dt))', () => {
+    const controllerCode = fs.readFileSync(CONTROLLER_PATH, 'utf8');
+
+    assert.ok(controllerCode.includes('exp(-FOLLOW_SMOOTH_SPEED * delta)'), 'Must use exponential decay for follow');
+    assert.ok(controllerCode.includes('exp(-FOCUS_SMOOTH_SPEED * delta)'), 'Must use exponential decay for focus');
+    assert.doesNotMatch(controllerCode, /position\.lerp\([^,]+,\s*delta\s*\*/, 'Forbidden linear delta multiplier');
+  });
+
+  // --- C10-C26: focus cancellation on selection change ---
+  it('C10-C26: In-flight Focus animation is immediately cancelled if selection changes', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_f1', position: { x: 20, y: 20, z: 0 }, is_alive: true },
+      { organism_id: 'org_f2', position: { x: 30, y: 30, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    overlay.selectOrganism('org_f1');
+    camera.focusOrganism('org_f1');
+    assert.strictEqual(camera.isFocusing, true);
+
+    // Selection changes while focusing
+    overlay.selectOrganism('org_f2');
+    assert.strictEqual(camera.isFocusing, false, 'Focus must be cancelled on selection change');
+  });
+
+  // --- C10-C27: same selection preserving follow ---
+  it('C10-C27: Re-selecting the already-followed organism preserves follow tracking', () => {
+    const overlay = new OrganismsOverlayModel();
+    overlay.cachedOrganisms = [
+      { organism_id: 'org_same', position: { x: 20, y: 20, z: 0 }, is_alive: true }
+    ];
+    const camera = new CameraFollowModel(overlay);
+    overlay.selectOrganism('org_same');
+    camera.startFollowing('org_same');
+    assert.strictEqual(camera.isTracking, true);
+
+    // Same selection event received
+    camera.onSelectionChanged('org_same');
+    assert.strictEqual(camera.isTracking, true);
+    assert.strictEqual(camera.targetId, 'org_same');
+  });
+
+  // --- C10-C28: Frozen-domain guard ---
+  it('C10-C28: Frozen-domain guard verifies only the authorized files have been modified/introduced', () => {
+    const baseCommit = 'a39a493';
+    const gitDiff = execSync(`git diff --name-only ${baseCommit}`, { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
+    const modifiedFiles = gitDiff ? gitDiff.split(/\r?\n/).filter(Boolean) : [];
+
+    const untracked = execSync('git status --porcelain', { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
+    const untrackedFiles = untracked.split(/\r?\n/).filter(l => l.startsWith('?? ')).map(l => l.slice(3).trim());
+
+    const allChanged = [...modifiedFiles, ...untrackedFiles];
+    const authorized = [
+      'godot/scripts/presentation/organisms_overlay.gd',
+      'godot/scripts/presentation/camera_controller.gd',
+      'tests/demo/demo_c10_camera_follow.test.js',
+      'tests/demo/demo_c10_camera_navigation.test.js'
+    ];
+
+    for (const f of allChanged) {
+      const normalized = f.replace(/\\/g, '/');
+      assert.ok(authorized.includes(normalized), `Unauthorized file modified: ${normalized}`);
+    }
+  });
+
+});

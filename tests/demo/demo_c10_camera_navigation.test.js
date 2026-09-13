@@ -390,7 +390,8 @@ describe('DEMO-01-C / C-10-B: Interactive Camera Navigation Suite', () => {
   // --- C10-B21: Frozen-domain guard ---
   it('C10-B21: Frozen-domain guard verifies only the 3 authorized files have been modified/introduced', () => {
     const baseCommit = '38e98de';
-    const gitDiff = execSync(`git diff --name-only ${baseCommit} HEAD`, { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
+    const c10bClosedCommit = 'a39a493';
+    const gitDiff = execSync(`git diff --name-only ${baseCommit} ${c10bClosedCommit}`, { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
     const modifiedFiles = gitDiff ? gitDiff.split(/\r?\n/).filter(Boolean) : [];
 
     const untracked = execSync('git status --porcelain', { cwd: ROOT_DIR, encoding: 'utf8' }).trim();

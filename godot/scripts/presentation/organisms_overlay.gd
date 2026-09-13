@@ -264,6 +264,70 @@ func _get_organism_visual_position(org: Dictionary, fallback_center: Vector2) ->
 		return base_interp + slot_offset
 	return fallback_center
 
+func _calculate_slot_center(origin: Vector2, count: int, slot_index: int) -> Vector2:
+	if count == 1:
+		return origin + Vector2(8.0, 8.0)
+	elif count == 2:
+		return origin + (Vector2(5.0, 8.0) if slot_index == 0 else Vector2(11.0, 8.0))
+	elif count == 3:
+		return origin + (Vector2(5.0, 5.0) if slot_index == 0 else (Vector2(11.0, 5.0) if slot_index == 1 else Vector2(8.0, 11.0)))
+	elif count == 4:
+		return origin + (Vector2(5.0, 5.0) if slot_index == 0 else (Vector2(11.0, 5.0) if slot_index == 1 else (Vector2(5.0, 11.0) if slot_index == 2 else Vector2(11.0, 11.0))))
+	else:
+		return origin + Vector2(8.0, 8.0)
+
+func get_organism_camera_target(org_id: String) -> Dictionary:
+	if org_id.is_empty():
+		return {"valid": false, "is_alive": false, "visual_position": Vector2.ZERO}
+
+	var org: Dictionary = get_organism_by_id(org_id)
+	if org.is_empty():
+		return {"valid": false, "is_alive": false, "visual_position": Vector2.ZERO}
+
+	var pos: Variant = org.get("position", null)
+	if typeof(pos) != TYPE_DICTIONARY:
+		return {"valid": false, "is_alive": false, "visual_position": Vector2.ZERO}
+
+	var z: int = int(pos.get("z", 0))
+	if z != active_z_layer:
+		return {"valid": false, "is_alive": false, "visual_position": Vector2.ZERO}
+
+	var cell_x: int = int(pos.get("x", 0))
+	var cell_y: int = int(pos.get("y", 0))
+
+	# Group organisms in this cell on active_z_layer (matching _draw and _hit_test)
+	var group: Array = []
+	for candidate in _cached_organisms:
+		var cpos: Variant = candidate.get("position", null)
+		if typeof(cpos) == TYPE_DICTIONARY:
+			if int(cpos.get("z", 0)) == active_z_layer and int(cpos.get("x", 0)) == cell_x and int(cpos.get("y", 0)) == cell_y:
+				group.append(candidate)
+
+	group.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return String(a.get("organism_id", "")) < String(b.get("organism_id", ""))
+	)
+
+	var count: int = group.size()
+	var slot_index: int = 0
+	for i in range(count):
+		if String(group[i].get("organism_id", "")) == org_id:
+			slot_index = i
+			break
+
+	if count > 4 and slot_index > 0:
+		slot_index = 0
+
+	var origin: Vector2 = Config.world_to_pixel(Vector2i(cell_x, cell_y))
+	var slot_center: Vector2 = _calculate_slot_center(origin, count, slot_index)
+	var visual_pos: Vector2 = _get_organism_visual_position(org, slot_center)
+	var is_alive: bool = bool(org.get("is_alive", true))
+
+	return {
+		"valid": true,
+		"is_alive": is_alive,
+		"visual_position": visual_pos
+	}
+
 func _hit_test_organism(pixel_pos: Vector2) -> Dictionary:
 	if _cached_organisms.is_empty():
 		return {}
@@ -300,18 +364,9 @@ func _hit_test_organism(pixel_pos: Vector2) -> Dictionary:
 
 		for i in range(count):
 			var org: Dictionary = group[i]
-			var fallback_center: Vector2 = origin + Vector2(8.0, 8.0)
-			if count == 2:
-				fallback_center = origin + (Vector2(5.0, 8.0) if i == 0 else Vector2(11.0, 8.0))
-			elif count == 3:
-				fallback_center = origin + (Vector2(5.0, 5.0) if i == 0 else (Vector2(11.0, 5.0) if i == 1 else Vector2(8.0, 11.0)))
-			elif count == 4:
-				fallback_center = origin + (Vector2(5.0, 5.0) if i == 0 else (Vector2(11.0, 5.0) if i == 1 else (Vector2(5.0, 11.0) if i == 2 else Vector2(11.0, 11.0))))
-			else:
-				# N > 4: only group[0] rendered at center
-				if i > 0:
-					continue
-				fallback_center = origin + Vector2(8.0, 8.0)
+			if count > 4 and i > 0:
+				continue
+			var fallback_center: Vector2 = _calculate_slot_center(origin, count, i)
 
 			var visual_pos: Vector2 = _get_organism_visual_position(org, fallback_center)
 			var d: float = pixel_pos.distance_to(visual_pos)
@@ -384,34 +439,16 @@ func _draw() -> void:
 		var cell_y: int = int(first_pos.get("y", 0))
 		var origin: Vector2 = Config.world_to_pixel(Vector2i(cell_x, cell_y))
 
-		if count == 1:
-			var draw_pos: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(8.0, 8.0))
-			_draw_organism_with_highlight(group[0], draw_pos)
-		elif count == 2:
-			var pos0: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(5.0, 8.0))
-			var pos1: Vector2 = _get_organism_visual_position(group[1], origin + Vector2(11.0, 8.0))
-			_draw_organism_with_highlight(group[0], pos0)
-			_draw_organism_with_highlight(group[1], pos1)
-		elif count == 3:
-			var pos0: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(5.0, 5.0))
-			var pos1: Vector2 = _get_organism_visual_position(group[1], origin + Vector2(11.0, 5.0))
-			var pos2: Vector2 = _get_organism_visual_position(group[2], origin + Vector2(8.0, 11.0))
-			_draw_organism_with_highlight(group[0], pos0)
-			_draw_organism_with_highlight(group[1], pos1)
-			_draw_organism_with_highlight(group[2], pos2)
-		elif count == 4:
-			var pos0: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(5.0, 5.0))
-			var pos1: Vector2 = _get_organism_visual_position(group[1], origin + Vector2(11.0, 5.0))
-			var pos2: Vector2 = _get_organism_visual_position(group[2], origin + Vector2(5.0, 11.0))
-			var pos3: Vector2 = _get_organism_visual_position(group[3], origin + Vector2(11.0, 11.0))
-			_draw_organism_with_highlight(group[0], pos0)
-			_draw_organism_with_highlight(group[1], pos1)
-			_draw_organism_with_highlight(group[2], pos2)
-			_draw_organism_with_highlight(group[3], pos3)
-		else:
-			var draw_pos: Vector2 = _get_organism_visual_position(group[0], origin + Vector2(8.0, 8.0))
+		if count > 4:
+			var slot_center: Vector2 = _calculate_slot_center(origin, count, 0)
+			var draw_pos: Vector2 = _get_organism_visual_position(group[0], slot_center)
 			_draw_organism_with_highlight(group[0], draw_pos)
 			_draw_stack_badge(origin, count - 1)
+		else:
+			for i in range(count):
+				var slot_center: Vector2 = _calculate_slot_center(origin, count, i)
+				var draw_pos: Vector2 = _get_organism_visual_position(group[i], slot_center)
+				_draw_organism_with_highlight(group[i], draw_pos)
 
 func _draw_organism_with_highlight(org: Dictionary, center: Vector2) -> void:
 	var org_id: String = String(org.get("organism_id", ""))
